@@ -1,0 +1,17 @@
+streamlit
+pandas
+openpyxl
+sqlalchemy
+psycopg2-binary
+python-dotenv
+playwright
+beautifulsoup4
+httpx
+requests
+email-validator
+phonenumbers
+rapidfuzz
+google-genai
+sendgrid
+apscheduler
+loguru
