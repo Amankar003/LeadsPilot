@@ -7,8 +7,12 @@ load_dotenv()
 # Database settings
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///leadpilot.db")
 
-# API Keys (Future use)
+# API Keys
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+SERPER_API_KEY = os.getenv("SERPER_API_KEY", "")
+SERP_API_KEY = os.getenv("SERP_API_KEY", "")
 # SMTP Settings for Email Sender
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", 587))

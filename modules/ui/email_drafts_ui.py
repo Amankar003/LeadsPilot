@@ -38,6 +38,12 @@ def render_email_drafts():
                 ["DRAFT", "APPROVED", "SENT", "CANCELLED", "ALL"],
                 key="draft_status_filter"
             )
+        
+        c_f1, c_f2 = st.columns(2)
+        with c_f1:
+            has_email_only = st.checkbox("📧 Has Email only", key="draft_has_email")
+        with c_f2:
+            has_phone_only = st.checkbox("📞 Has Phone only", key="draft_has_phone")
 
         draft_repo = EmailDraftRepository(db)
         lead_repo = LeadRepository(db)
@@ -52,6 +58,22 @@ def render_email_drafts():
 
         if not drafts:
             empty_state("✉️", "No Drafts", f"No {status_filter.lower()} drafts for this campaign.")
+            return
+
+        # Apply email/phone filters
+        filtered_drafts = []
+        for d in drafts:
+            lead = db.query(Lead).filter_by(id=d.lead_id).first()
+            if has_email_only and not (lead and lead.email):
+                continue
+            if has_phone_only and not (lead and lead.phone):
+                continue
+            filtered_drafts.append(d)
+        
+        drafts = filtered_drafts
+
+        if not drafts:
+            st.info("No drafts match the selected filters.")
             return
 
         # Count by status
@@ -72,6 +94,14 @@ def render_email_drafts():
 
             with st.expander(f"{status_icon} {biz_name} — {draft.subject[:50]}"):
                 if draft.status == "DRAFT":
+                    if hasattr(draft, 'email_type') and draft.email_type:
+                        c1, c2, c3 = st.columns(3)
+                        c1.caption(f"🎯 **Type:** {draft.email_type}")
+                        c2.caption(f"🧠 **Confidence:** {draft.confidence_score}")
+                        c3.caption(f"📝 **Preview:** {getattr(draft, 'preview_text', 'N/A')}")
+                        
+                        st.info(f"**Problem:** {draft.identified_problem}\n\n**Solution:** {draft.proposed_solution}")
+
                     new_subject = st.text_input("Subject", value=draft.subject, key=f"subj_{draft.id}")
                     new_body = st.text_area("Body", value=draft.body, height=200, key=f"body_{draft.id}")
 
@@ -91,11 +121,21 @@ def render_email_drafts():
                             lead_repo.update_status(draft.lead_id, "EMAIL_APPROVED")
                             st.rerun()
                     with col3:
-                        if st.button("❌ Cancel", key=f"cancel_{draft.id}", use_container_width=True):
+                        if st.button("❌ Reject", key=f"cancel_{draft.id}", use_container_width=True, help="Cancel this draft and send lead back to Generator"):
                             draft_repo.update(draft.id, status="CANCELLED")
+                            lead_repo.update_status(draft.lead_id, "AI_ANALYZED")
                             st.rerun()
                 else:
                     st.markdown(f"**Subject:** {draft.subject}")
+                    
+                    if hasattr(draft, 'email_type') and draft.email_type:
+                        c1, c2, c3 = st.columns(3)
+                        c1.caption(f"🎯 **Type:** {draft.email_type}")
+                        c2.caption(f"🧠 **Confidence:** {draft.confidence_score}")
+                        c3.caption(f"📝 **Preview:** {getattr(draft, 'preview_text', 'N/A')}")
+                        
+                        st.info(f"**Problem:** {draft.identified_problem}\n\n**Solution:** {draft.proposed_solution}")
+
                     st.code(draft.body, language=None)
                     st.caption(f"Status: {draft.status} | Created: {str(draft.created_at)[:16]}")
     finally:

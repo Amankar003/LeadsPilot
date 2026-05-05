@@ -11,7 +11,13 @@ requests
 email-validator
 phonenumbers
 rapidfuzz
-google-genai
+# Removed gemini: google-genai
 sendgrid
 apscheduler
 loguru
+selenium
+webdriver-manager
+selenium-stealth
+undetected-chromedriver
+setuptools
+groq

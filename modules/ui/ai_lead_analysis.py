@@ -9,10 +9,10 @@ import time
 
 
 def render_ai_lead_analysis():
-    page_header("🧠", "AI Lead Analysis", "Use Gemini AI to score leads, identify pain points, and recommend services")
+    page_header("🧠", "AI Lead Analysis", "Use Groq AI (Llama 3.3) to score leads, identify pain points, and recommend services")
 
     workflow_indicator(
-        ["Scrape", "Clean", "AI Analyze", "Generate Email", "Review", "Send"],
+        ["Scrape", "Clean", "AI Analyze", "Generate Email", "Review Draft", "Send"],
         active_index=2
     )
 
@@ -39,9 +39,27 @@ def render_ai_lead_analysis():
             empty_state("👥", "No Leads", "No leads found for this campaign. Run the scraping job first.")
             return
 
+        # Filters
+        c_f1, c_f2 = st.columns(2)
+        with c_f1:
+            has_email_only = st.checkbox("📧 Has Email only", key="ai_has_email")
+        with c_f2:
+            has_phone_only = st.checkbox("📞 Has Phone only", key="ai_has_phone")
+
         analyzed_lead_ids = set(
             row.lead_id for row in db.query(LeadInsight.lead_id).all()
         )
+        
+        # Apply filters to leads
+        filtered_leads = []
+        for l in campaign_leads:
+            if has_email_only and not l.email:
+                continue
+            if has_phone_only and not l.phone:
+                continue
+            filtered_leads.append(l)
+        
+        campaign_leads = filtered_leads
         unanalyzed_leads = [l for l in campaign_leads if l.id not in analyzed_lead_ids]
         analyzed_leads = [l for l in campaign_leads if l.id in analyzed_lead_ids]
 
@@ -169,7 +187,7 @@ def _analyze_leads(db, lead_ids, campaign_id):
             pain_points=insight_data.get("pain_points"),
             lead_score=insight_data.get("lead_score"),
             lead_type=insight_data.get("lead_type"),
-            ai_model="gemini",
+            ai_model="groq",
             ai_response=insight_data.get("ai_response"),
         )
         lead_repo.update_status(l_id, "AI_ANALYZED")

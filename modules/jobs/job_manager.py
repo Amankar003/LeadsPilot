@@ -21,6 +21,9 @@ class JobManager:
             location=instruction['location'],
             limit=instruction['limit'],
             required_fields=instruction['required_fields'],
+            enable_fallback=instruction.get('enable_fallback', True),
+            max_fallback_results=instruction.get('max_fallback_results', 5),
+            max_fallback_pages=instruction.get('max_fallback_pages', 2),
             status="CREATED"
         )
         
@@ -31,6 +34,9 @@ class JobManager:
             category=campaign.category,
             location=campaign.location,
             limit=campaign.limit,
+            enable_fallback=campaign.enable_fallback,
+            max_fallback_results=campaign.max_fallback_results,
+            max_fallback_pages=campaign.max_fallback_pages,
             status=JOB_PENDING
         )
         

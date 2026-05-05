@@ -46,9 +46,19 @@ def render_email_generator():
             return
 
         st.markdown(f"##### Found **{len(all_leads)}** leads ready for email generation")
+        
+        c_f1, c_f2 = st.columns(2)
+        with c_f1:
+            has_email_only = st.checkbox("📧 Has Email only", key="gen_has_email")
+        with c_f2:
+            has_phone_only = st.checkbox("📞 Has Phone only", key="gen_has_phone")
 
         data = []
         for l in all_leads:
+            if has_email_only and not l.email:
+                continue
+            if has_phone_only and not l.phone:
+                continue
             insight = insight_repo.get_by_lead_id(l.id)
             data.append({
                 "Select": False,
@@ -108,7 +118,13 @@ def render_email_generator():
                             campaign_id=selected_camp_id,
                             subject=draft_data.get("subject", "Opportunity"),
                             body=draft_data.get("body", "Hello,"),
-                            generated_by_model="gemini",
+                            preview_text=draft_data.get("preview_text", ""),
+                            identified_problem=draft_data.get("identified_problem", ""),
+                            proposed_solution=draft_data.get("proposed_solution", ""),
+                            personalization_used=draft_data.get("personalization_used", ""),
+                            confidence_score=draft_data.get("confidence_score", ""),
+                            email_type=draft_data.get("email_type", ""),
+                            generated_by_model="groq",
                         )
                         lead_repo.update_status(l_id, "EMAIL_GENERATED")
 
