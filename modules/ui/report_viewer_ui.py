@@ -581,7 +581,18 @@ def _render_outreach_tab(db, lead: Lead, report: AnalysisReport, ai_data: dict):
                 # Mark outreach as approved
                 db_id = result.get("_db_id")
                 if db_id:
-                    OutreachMessageRepository(db).approve(db_id, selected_subject)
+                    OutreachMessageRepository(db).approve(db_id)
+                    
+                # Create CRM Activity
+                from modules.database.repositories import CRMActivityRepository
+                from modules.database.models import get_or_create_default_user
+                user = get_or_create_default_user(db)
+                CRMActivityRepository(db).create(
+                    lead_id=lead.id,
+                    campaign_id=lead.campaign_id,
+                    activity_type="outreach_approved",
+                    description=f"Subject: {selected_subject}\n\nBody Summary: {edited_body[:100]}..."
+                )
 
                 # Update lead status
                 LeadRepository(db).update_status(lead.id, "EMAIL_GENERATED")

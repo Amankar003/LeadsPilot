@@ -820,6 +820,26 @@ def run_bulk_serper_scraping(
                 total_scraped=summary["raw_results_found"],
                 total_saved=summary["unique_leads_saved"]
             )
+            
+        # Normalize counts
+        db_norm = SessionLocal()
+        try:
+            j_norm = db_norm.query(ScrapingJob).filter(ScrapingJob.id == job_id).first()
+            if j_norm:
+                if not is_stopped():
+                    from datetime import datetime
+                    j_norm.completed_at = datetime.utcnow()
+                scraped = j_norm.total_scraped or 0
+                saved = j_norm.total_saved or 0
+                duplicates = j_norm.total_duplicates or 0
+                failed = j_norm.total_failed or 0
+                accounted = saved + duplicates + failed
+                if scraped > accounted:
+                    duplicates += scraped - accounted
+                    j_norm.total_duplicates = duplicates
+                db_norm.commit()
+        finally:
+            db_norm.close()
 
     except Exception as e:
         logger.error(f"Bulk scraping failed: {str(e)}")

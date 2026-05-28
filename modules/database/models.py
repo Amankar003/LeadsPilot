@@ -67,9 +67,11 @@ class ScrapingJob(Base):
     max_fallback_results = Column(Integer, default=5)
     max_fallback_pages = Column(Integer, default=2)
     
+    total_loaded = Column(Integer, default=0)
     total_scraped = Column(Integer, default=0)
     total_saved = Column(Integer, default=0)
     total_duplicates = Column(Integer, default=0)
+    total_skipped = Column(Integer, default=0)
     total_failed = Column(Integer, default=0)
     
     error_message = Column(String, nullable=True)

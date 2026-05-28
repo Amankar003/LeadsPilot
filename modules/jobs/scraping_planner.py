@@ -14,7 +14,7 @@ from modules.database.models import ScrapingJob
 
 logger = get_logger(__name__)
 
-def update_job_stats(job_id, scraped_delta=0, saved_delta=0, duplicate_delta=0, failed_delta=0, status=None):
+def update_job_stats(job_id, scraped_delta=0, saved_delta=0, duplicate_delta=0, failed_delta=0, loaded_delta=0, skipped_delta=0, loaded_count=None, status=None):
     """Safely update job statistics using a fresh short-lived session."""
     db = SessionLocal()
     try:
@@ -25,6 +25,9 @@ def update_job_stats(job_id, scraped_delta=0, saved_delta=0, duplicate_delta=0, 
         if saved_delta: job.total_saved += saved_delta
         if duplicate_delta: job.total_duplicates += duplicate_delta
         if failed_delta: job.total_failed += failed_delta
+        if loaded_delta: job.total_loaded += loaded_delta
+        if skipped_delta: job.total_skipped += skipped_delta
+        if loaded_count is not None: job.total_loaded = loaded_count
         if status: job.status = status
         db.commit()
         return job
@@ -194,19 +197,34 @@ class ScrapingPlanner:
 
             if not should_stop():
                 update_job_stats(job_id, status=JOB_COMPLETED)
-                # also update completion time
-                db_end = SessionLocal()
-                try:
-                    j_end = db_end.query(ScrapingJob).filter(ScrapingJob.id == job_id).first()
-                    if j_end:
-                        j_end.completed_at = datetime.datetime.utcnow()
-                        db_end.commit()
-                finally:
-                    db_end.close()
+            
+            # Normalize counts
+            db_norm = SessionLocal()
+            try:
+                j_norm = db_norm.query(ScrapingJob).filter(ScrapingJob.id == job_id).first()
+                if j_norm:
+                    if not should_stop():
+                        j_norm.completed_at = datetime.datetime.utcnow()
+                    
+                    scraped = j_norm.total_scraped or 0
+                    saved = j_norm.total_saved or 0
+                    duplicates = j_norm.total_duplicates or 0
+                    failed = j_norm.total_failed or 0
+                    skipped = j_norm.total_skipped or 0
+                    
+                    processed = saved + duplicates + skipped + failed
+                    if processed < scraped:
+                        skipped += scraped - processed
+                        j_norm.total_skipped = skipped
+                        
+                    db_norm.commit()
+            finally:
+                db_norm.close()
             
         except Exception as e:
             logger.error(f"Error executing job {job_id}: {e}")
             update_job_stats(job_id, status=JOB_FAILED)
+
 
     def _process_leads(self, job_id, campaign_id, location, limit, scraper, query, should_stop):
         """
@@ -227,6 +245,12 @@ class ScrapingPlanner:
             for lead_data in scraped_results:
                 if should_stop(): 
                     break
+                
+                if lead_data.get("meta_event") == "loaded":
+                    update_job_stats(job_id, loaded_count=lead_data.get("count", 0))
+                    continue
+                
+                update_job_stats(job_id, scraped_delta=1)
 
                 business_name = lead_data.get("business_name", "")
                 source_url = lead_data.get("google_maps_url", "")
@@ -235,17 +259,19 @@ class ScrapingPlanner:
 
                 if is_fake_business_name(business_name, query):
                     logger.info(f"Skipping lead due to fake business name: {business_name}")
+                    update_job_stats(job_id, skipped_delta=1)
                     continue
 
                 if is_invalid_source_url(source_url):
                     logger.info(f"Skipping lead due to invalid source URL: {source_url}")
+                    update_job_stats(job_id, skipped_delta=1)
                     continue
 
                 from modules.dork_optimizer.dork_filters import is_low_quality_dork_url
                 website_url = lead_data.get('website') or lead_data.get('google_maps_url')
                 if website_url and is_low_quality_dork_url(website_url, exclude_directories=True):
                     logger.info(f"Skipping low quality dork URL: {website_url}")
-                    update_job_stats(job_id, failed_delta=1)
+                    update_job_stats(job_id, skipped_delta=1)
                     continue
 
                 email_source = "website"
@@ -266,8 +292,6 @@ class ScrapingPlanner:
                     lead_data['has_phone'] = True
                 if lead_data.get('website'):
                     lead_data['has_website'] = True
-                    
-                update_job_stats(job_id, scraped_delta=1)
 
                 if local_deduplicator.is_duplicate(lead_data):
                     update_job_stats(job_id, duplicate_delta=1)

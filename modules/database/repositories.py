@@ -123,6 +123,32 @@ class JobRepository:
             return job
         return safe_write(self.db, _write)
 
+    def update_stats(self, job_id: str, scraped_count: int = None, saved_count: int = None, duplicate_count: int = None, failed_count: int = None, loaded_count: int = None, skipped_count: int = None, status: str = None, error_message: str = None):
+        def _write():
+            job = self.db.query(ScrapingJob).filter(ScrapingJob.id == job_id).first()
+            if job:
+                if scraped_count is not None:
+                    job.total_scraped = scraped_count
+                if saved_count is not None:
+                    job.total_saved = saved_count
+                if duplicate_count is not None:
+                    job.total_duplicates = duplicate_count
+                if failed_count is not None:
+                    job.total_failed = failed_count
+                if loaded_count is not None:
+                    job.total_loaded = loaded_count
+                if skipped_count is not None:
+                    job.total_skipped = skipped_count
+                if status is not None:
+                    job.status = status
+                if error_message is not None:
+                    job.error_message = error_message
+                self.db.commit()
+                self.db.refresh(job)
+            return job
+        return safe_write(self.db, _write)
+
+
 class LeadRepository:
     def __init__(self, db: Session):
         self.db = db
@@ -344,6 +370,26 @@ class OutreachMessageRepository:
             OutreachMessage.lead_id == lead_id
         ).order_by(OutreachMessage.created_at.desc()).first())
 
+    def approve(self, message_id: str, lead_id: str = None, user_id: str = None):
+        def _write():
+            from datetime import datetime
+            msg = self.db.query(OutreachMessage).filter(OutreachMessage.id == message_id).first()
+            if not msg:
+                raise ValueError("Outreach message not found")
+            msg.status = "APPROVED"
+            
+            if hasattr(msg, "is_approved"):
+                msg.is_approved = True
+            if hasattr(msg, "approved_at"):
+                msg.approved_at = datetime.utcnow()
+            if hasattr(msg, "updated_at"):
+                msg.updated_at = datetime.utcnow()
+            
+            self.db.commit()
+            self.db.refresh(msg)
+            return msg
+        return safe_write(self.db, _write)
+
 class DorkRepository:
     def __init__(self, db: Session):
         self.db = db
@@ -376,15 +422,4 @@ class DorkRepository:
             return d
         return safe_write(self.db, _write)
 
-    def approve(self, msg_id: str, approved_subject: str):
-        def _write():
-            from datetime import datetime
-            msg = self.db.query(OutreachMessage).filter(OutreachMessage.id == msg_id).first()
-            if msg:
-                msg.is_approved = True
-                msg.approved_at = datetime.utcnow()
-                msg.approved_subject = approved_subject
-                self.db.commit()
-                self.db.refresh(msg)
-            return msg
         return safe_write(self.db, _write)

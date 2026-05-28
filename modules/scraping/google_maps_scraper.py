@@ -11,7 +11,6 @@ class GoogleMapsScraper:
         If limit is None, scrapes all available results.
         Returns a list of dictionaries with lead data.
         """
-        leads = []
         search_query = f"{query} in {location}" if location else query
         
         try:
@@ -77,6 +76,7 @@ class GoogleMapsScraper:
                 total_to_process = len(cards_to_process)
                 
                 logger.info(f"Phase 2: Extracting data from {total_to_process} businesses...")
+                yield {"meta_event": "loaded", "count": total_to_process}
                 
                 for idx, card in enumerate(cards_to_process, 1):
                     if should_stop and should_stop():
@@ -155,16 +155,12 @@ class GoogleMapsScraper:
                                 "scraped_at": time.strftime("%Y-%m-%d %H:%M:%S")
                             }
                         }
-                        leads.append(lead_data)
+                        yield lead_data
                         logger.info(f"Scraped ({idx}/{total_to_process}): {business_name}")
                         
                     except Exception as e:
                         logger.error(f"Error extracting card {idx} details: {str(e)}")
                         
                 browser.close()
-                logger.info(f"Scraping completed. Total leads extracted: {len(leads)}")
-                
         except Exception as e:
             logger.error(f"Google Maps scraper failed: {str(e)}")
-            
-        return leads

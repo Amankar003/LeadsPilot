@@ -519,6 +519,11 @@ elif page_clean == "Campaigns":
 elif page_clean == "Lead Sources":
     page_header("⚙️", "Scraping Jobs", "Monitor and control your scraping jobs")
 
+    col_hdr1, col_hdr2 = st.columns([4, 1])
+    with col_hdr2:
+        if st.button("🔄 Refresh Jobs", type="secondary", use_container_width=True):
+            st.rerun()
+
     db = SessionLocal()
     try:
         jobs = JobRepository(db).get_all()
@@ -528,13 +533,21 @@ elif page_clean == "Lead Sources":
         else:
             for job in jobs:
                 # Status icon
-                icon = {"PENDING": "⏳", "RUNNING": "🔄", "COMPLETED": "✅", "FAILED": "❌"}.get(job.status, "❓")
+                icon = {"PENDING": "⏳", "RUNNING": "🔄", "COMPLETED": "✅", "FAILED": "❌", "STOPPED": "🛑"}.get(job.status, "❓")
                 with st.expander(f"{icon} {job.category} in {job.location} — **{job.status}**", expanded=(job.status == "RUNNING")):
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("📦 Scraped", job.total_scraped)
-                    c2.metric("💾 Saved", job.total_saved)
-                    c3.metric("🔁 Duplicates", job.total_duplicates)
-                    c4.metric("❌ Failed", job.total_failed)
+                    # Display comprehensive scraping job statistics
+                    c1, c2, c3, c4, c5, c6 = st.columns(6)
+                    c1.metric("📦 Loaded", job.total_loaded)
+                    c2.metric("🗂️ Scraped", job.total_scraped)
+                    c3.metric("💾 Saved", job.total_saved)
+                    c4.metric("🔁 Duplicates", job.total_duplicates)
+                    c5.metric("⏭️ Skipped", job.total_skipped)
+                    c6.metric("❌ Failed", job.total_failed)
+                    # Compute unprocessed dynamically
+                    unprocessed = (job.total_loaded or 0) - (job.total_scraped or 0)
+                    if unprocessed < 0:
+                        unprocessed = 0
+                    st.caption(f"⚡ Unprocessed: {unprocessed}")
 
                     st.caption(f"Job ID: `{job.id}` • Campaign: `{job.campaign_id[:8]}…` • Platform: {job.platform}")
 
@@ -559,7 +572,7 @@ elif page_clean == "Lead Sources":
                             st.rerun()
 
                     # Part 2: Campaign-wise Leads View/Download
-                    col_view, col_dl, _ = st.columns([1, 1, 2])
+                    col_view, col_dl, col_ref, _ = st.columns([1, 1, 1, 1])
                     
                     with col_view:
                         if st.button("👀 View Leads", key=f"view_{job.id}"):
@@ -579,6 +592,10 @@ elif page_clean == "Lead Sources":
                             } for l in leads])
                             csv = df.to_csv(index=False).encode('utf-8')
                             st.download_button("📥 Download (CSV)", data=csv, file_name=f"leads_{job.id}.csv", mime="text/csv", key=f"dl_{job.id}")
+
+                    with col_ref:
+                        if st.button("🔄 Refresh", key=f"ref_{job.id}"):
+                            st.rerun()
 
                     if st.session_state.get("view_job_id") == job.id:
                         from modules.database.models import Lead

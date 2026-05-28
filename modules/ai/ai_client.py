@@ -16,7 +16,7 @@ class AIClient:
         self.groq_client = None
         if self.groq_api_key:
             try:
-                self.groq_client = Groq(api_key=self.groq_api_key)
+                self.groq_client = Groq(api_key=self.groq_api_key, max_retries=0)
             except Exception as e:
                 logger.error(f"Failed to initialize Groq client: {e}")
 
@@ -80,6 +80,10 @@ class AIClient:
                 content = response.choices[0].message.content
                 result = self._safe_json_parse(content)
             except Exception as e:
+                error_str = str(e).lower()
+                if "401" in error_str or "unauthorized" in error_str or "invalid_api_key" in error_str:
+                    logger.error(f"Groq API Key invalid (401). Disabling Groq for this session.")
+                    self.groq_client = None
                 logger.error(f"Groq JSON generation failed: {e}.")
 
         # --- 2. Final Graceful Local Fallback ---
@@ -120,6 +124,10 @@ class AIClient:
                 )
                 return response.choices[0].message.content
             except Exception as e:
+                error_str = str(e).lower()
+                if "401" in error_str or "unauthorized" in error_str or "invalid_api_key" in error_str:
+                    logger.error(f"Groq API Key invalid (401). Disabling Groq for this session.")
+                    self.groq_client = None
                 logger.error(f"Groq text generation failed: {e}.")
 
         return "Error: Unable to generate content. Please check your internet connection or API settings."
