@@ -11,7 +11,6 @@ if _db_url.startswith("postgres://"):
 DATABASE_URL = _db_url
 
 # API Keys
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 SERPER_API_KEY = os.getenv("SERPER_API_KEY", "")
@@ -28,9 +27,11 @@ DEFAULT_SENDER_NAME = os.getenv("DEFAULT_SENDER_NAME", "")
 APP_NAME = "LeadPilot AI"
 VERSION = "1.0.0"
 
-# SendGrid Settings
-SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "")
-SENDGRID_FROM_EMAIL = os.getenv("SENDGRID_FROM_EMAIL", "")
+# MailForge / SMTP Defaults
+MAILFORGE_SECRET_KEY = os.getenv("MAILFORGE_ENCRYPTION_KEY", os.getenv("MAILFORGE_SECRET_KEY", ""))
+DEFAULT_SMTP_HOST = os.getenv("DEFAULT_SMTP_HOST", "smtp.gmail.com")
+DEFAULT_SMTP_PORT = int(os.getenv("DEFAULT_SMTP_PORT", 587))
+DEFAULT_SMTP_USE_TLS = str(os.getenv("DEFAULT_SMTP_USE_TLS", "true")).lower() == "true"
 
 # Outreach Limits
 DEFAULT_EMAIL_DELAY_SECONDS = int(os.getenv("DEFAULT_EMAIL_DELAY_SECONDS", 30))

@@ -115,7 +115,7 @@ def run_migration():
             ('recipient_email', 'VARCHAR(255)', 'VARCHAR(255)'),
             ('subject', 'VARCHAR(255)', 'VARCHAR(255)'),
             ('body', 'TEXT', 'TEXT'),
-            ('provider', "VARCHAR(100) DEFAULT 'sendgrid'", "VARCHAR(100) DEFAULT 'sendgrid'"),
+            ('provider', "VARCHAR(100) DEFAULT 'smtp'", "VARCHAR(100) DEFAULT 'smtp'"),
             ('provider_message_id', 'VARCHAR(255)', 'VARCHAR(255)'),
             ('status', "VARCHAR(100) DEFAULT 'READY'", "VARCHAR(100) DEFAULT 'READY'"),
             ('sent_at', 'TIMESTAMP', 'DATETIME'),
@@ -129,7 +129,7 @@ def run_migration():
             ('smtp_username', 'VARCHAR(255)', 'VARCHAR(255)'),
             ('smtp_password', 'VARCHAR(255)', 'VARCHAR(255)'),
             ('smtp_password_env_key', 'VARCHAR(255)', 'VARCHAR(255)'),
-            ('sendgrid_api_key_env', 'VARCHAR(255)', 'VARCHAR(255)'),
+            ('sendgrid_api_key_env', 'VARCHAR(255)', 'VARCHAR(255)'), # DEPRECATED
             ('sender_name', 'VARCHAR(255)', 'VARCHAR(255)'),
             ('smtp_host', 'VARCHAR(255)', 'VARCHAR(255)'),
             ('smtp_port', 'INTEGER', 'INTEGER'),
@@ -241,12 +241,14 @@ def run_migration():
             ('evidence', 'TEXT', 'TEXT'),
             ('business_impact', 'TEXT', 'TEXT'),
             ('recommended_service', 'VARCHAR(255)', 'VARCHAR(255)'),
+            ('job_id', 'VARCHAR(255)', 'VARCHAR(255)'),
         ],
         'recommended_services': [
             ('service_name', 'VARCHAR(255)', 'VARCHAR(255)'),
             ('priority', 'VARCHAR(100)', 'VARCHAR(100)'),
             ('reason', 'TEXT', 'TEXT'),
             ('pitch_angle', 'TEXT', 'TEXT'),
+            ('job_id', 'VARCHAR(255)', 'VARCHAR(255)'),
         ],
         'outreach_messages': [
             ('email_type', 'VARCHAR(100)', 'VARCHAR(100)'),

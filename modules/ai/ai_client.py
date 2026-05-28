@@ -1,9 +1,8 @@
 import json
 import os
-import requests
 from groq import Groq
 from utils.logging_utils import get_logger
-from config.settings import GROQ_API_KEY, GROQ_MODEL, GEMINI_API_KEY
+from config.settings import GROQ_API_KEY, GROQ_MODEL
 
 logger = get_logger(__name__)
 
@@ -13,9 +12,6 @@ class AIClient:
         self.groq_api_key = GROQ_API_KEY or os.getenv("GROQ_API_KEY", "")
         self.groq_model = GROQ_MODEL or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         
-        self.gemini_api_key = GEMINI_API_KEY or os.getenv("GEMINI_API_KEY", "")
-        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-
         # Initialize Groq client
         self.groq_client = None
         if self.groq_api_key:
@@ -24,11 +20,47 @@ class AIClient:
             except Exception as e:
                 logger.error(f"Failed to initialize Groq client: {e}")
 
-    def generate_json(self, prompt: str) -> dict:
+    def health_check(self) -> dict:
         """
-        Tries to generate structured JSON using Groq.
-        If it fails or is not configured, automatically falls back to Gemini.
-        If both fail, returns a graceful mock fallback.
+        Tests the Groq API connection.
+        Returns a dict with status and message.
+        """
+        if not self.groq_client:
+            return {"status": "error", "message": "Groq API key not configured"}
+        try:
+            # Send a tiny prompt to verify connectivity and API key validity
+            self.groq_client.chat.completions.create(
+                model=self.groq_model,
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=5
+            )
+            return {"status": "success", "message": "Connected successfully"}
+        except Exception as e:
+            error_str = str(e).lower()
+            if "401" in error_str or "unauthorized" in error_str or "invalid" in error_str:
+                return {"status": "error", "message": "Invalid Groq API key (401 Unauthorized)"}
+            return {"status": "error", "message": f"Connection failed: {str(e)}"}
+
+    def _safe_json_parse(self, content: str) -> dict:
+        """Helper to safely parse JSON from string, handling markdown fences."""
+        content = content.strip()
+        if content.startswith("```json"):
+            content = content[7:]
+        elif content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON Parsing failed: {e}. Raw content: {content}")
+            return None
+
+    def generate_json(self, prompt: str, system_prompt: str = "You are a helpful assistant that responds only with valid JSON.", temperature: float = 0.7, max_tokens: int = 1500) -> dict:
+        """
+        Generates structured JSON using Groq.
+        If it fails, automatically falls back to a graceful mock fallback.
         """
         result = None
         # --- 1. Try Groq ---
@@ -38,45 +70,24 @@ class AIClient:
                 response = self.groq_client.chat.completions.create(
                     model=self.groq_model,
                     messages=[
-                        {"role": "system", "content": "You are a helpful assistant that responds only with valid JSON."},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
                     ],
-                    response_format={"type": "json_object"}
+                    response_format={"type": "json_object"},
+                    temperature=temperature,
+                    max_tokens=max_tokens
                 )
                 content = response.choices[0].message.content
-                result = json.loads(content)
+                result = self._safe_json_parse(content)
             except Exception as e:
-                logger.error(f"Groq JSON generation failed: {e}. Switching to Gemini fallback...")
+                logger.error(f"Groq JSON generation failed: {e}.")
 
-        # --- 2. Fallback to Gemini ---
-        if result is None and self.gemini_api_key:
-            try:
-                logger.info(f"Attempting Gemini fallback with model {self.gemini_model}...")
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.gemini_model}:generateContent?key={self.gemini_api_key}"
-                headers = {"Content-Type": "application/json"}
-                data = {
-                    "contents": [{"parts": [{"text": prompt + "\n\nCRITICAL: You must return ONLY a valid JSON object. Do not include any markdown formatting like ```json or ```."}]}],
-                    "generationConfig": {
-                        "responseMimeType": "application/json"
-                    }
-                }
-                res = requests.post(url, headers=headers, json=data, timeout=15)
-                if res.status_code == 200:
-                    res_json = res.json()
-                    # Parse content from Gemini schema
-                    text = res_json['candidates'][0]['content']['parts'][0]['text']
-                    result = json.loads(text)
-                else:
-                    logger.error(f"Gemini API returned error status {res.status_code}: {res.text}")
-            except Exception as e:
-                logger.error(f"Gemini JSON generation failed: {e}")
-
-        # --- 3. Final Graceful Local Fallback ---
+        # --- 2. Final Graceful Local Fallback ---
         if result is None:
-            logger.warning("Both Groq and Gemini failed to generate JSON. Returning a clean local template.")
+            logger.warning("Groq failed to generate JSON. Returning a clean local template.")
             result = self._get_fallback_template(prompt)
 
-        # --- 4. Safe Dictionary Conversion if list or non-dict is returned ---
+        # --- 3. Safe Dictionary Conversion if list or non-dict is returned ---
         if isinstance(result, list):
             logger.info("Parsed AI response is a list. Safely converting to dict.")
             if result and isinstance(result[0], dict):
@@ -89,42 +100,27 @@ class AIClient:
 
         return result
 
-    def generate_text(self, prompt: str) -> str:
+    def generate_text(self, prompt: str, system_prompt: str = None, temperature: float = 0.7, max_tokens: int = 1500) -> str:
         """
-        Tries to generate text using Groq.
-        If it fails, automatically falls back to Gemini.
+        Generates text using Groq.
         """
-        # --- 1. Try Groq ---
         if self.groq_client:
             try:
                 logger.info(f"Attempting Groq text generation with model {self.groq_model}...")
+                messages = []
+                if system_prompt:
+                    messages.append({"role": "system", "content": system_prompt})
+                messages.append({"role": "user", "content": prompt})
+
                 response = self.groq_client.chat.completions.create(
                     model=self.groq_model,
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ]
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens
                 )
                 return response.choices[0].message.content
             except Exception as e:
-                logger.error(f"Groq text generation failed: {e}. Switching to Gemini fallback...")
-
-        # --- 2. Fallback to Gemini ---
-        if self.gemini_api_key:
-            try:
-                logger.info(f"Attempting Gemini text generation with model {self.gemini_model}...")
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.gemini_model}:generateContent?key={self.gemini_api_key}"
-                headers = {"Content-Type": "application/json"}
-                data = {
-                    "contents": [{"parts": [{"text": prompt}]}]
-                }
-                res = requests.post(url, headers=headers, json=data, timeout=15)
-                if res.status_code == 200:
-                    res_json = res.json()
-                    return res_json['candidates'][0]['content']['parts'][0]['text']
-                else:
-                    logger.error(f"Gemini API text generation returned error status {res.status_code}: {res.text}")
-            except Exception as e:
-                logger.error(f"Gemini text generation failed: {e}")
+                logger.error(f"Groq text generation failed: {e}.")
 
         return "Error: Unable to generate content. Please check your internet connection or API settings."
 

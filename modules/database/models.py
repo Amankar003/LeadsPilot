@@ -210,7 +210,7 @@ class EmailLog(Base):
     recipient_email = Column(String, nullable=False)
     subject = Column(String, nullable=False)
     body = Column(String, nullable=False)
-    provider = Column(String, default="sendgrid")
+    provider = Column(String, default="smtp")  # Default changed from sendgrid to smtp
     provider_message_id = Column(String, nullable=True)
     status = Column(String, default="READY")
     sent_at = Column(DateTime, nullable=True)
@@ -378,11 +378,11 @@ class SenderAccount(Base):
     smtp_username = Column(String, nullable=True)
     smtp_password = Column(String, nullable=True)
     smtp_password_env_key = Column(String, nullable=True)
-    sendgrid_api_key_env = Column(String, nullable=True)
+    sendgrid_api_key_env = Column(String, nullable=True)  # DEPRECATED: No longer used, kept for DB schema compatibility
     sender_name = Column(String, nullable=True)
     smtp_host = Column(String, nullable=True)
     smtp_port = Column(Integer, nullable=True)
-    provider = Column(String, nullable=True)
+    provider = Column(String, nullable=True)  # e.g., smtp, custom_smtp, gmail_smtp
     daily_limit = Column(Integer, default=100)
     hourly_limit = Column(Integer, default=10)
     sent_today = Column(Integer, default=0)
@@ -486,6 +486,17 @@ class MailForgeSuppressionList(Base):
     source = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class MailForgeSetting(Base):
+    """Key-value settings table for MailForge bulk sending engine."""
+    __tablename__ = "mailforge_settings"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    key = Column(String, nullable=False, unique=True, index=True)
+    value = Column(String, nullable=True)
+    value_type = Column(String, default="string")  # string, int, float, bool
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 
 class MarketRecommendation(Base):
     __tablename__ = "market_recommendations"

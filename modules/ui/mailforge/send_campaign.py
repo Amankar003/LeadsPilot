@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
-from modules.mailforge.sender import MailForgeSender
+from modules.mailforge.sender import MailForgeBulkSender
 from config.database import SessionLocal
 from modules.database.models import MailForgeCampaign, MailForgeDraft, SenderAccount, Lead
 
@@ -40,7 +40,7 @@ def render_send_campaign():
         # Select sender account
         senders = db.query(SenderAccount).filter(SenderAccount.is_active == True).all()
         if not senders:
-            st.warning("⚠️ No active sender accounts configured! Please add an active SMTP/SendGrid sender account in the settings tab.")
+            st.warning("⚠️ No active sender accounts configured! Please add an active SMTP sender account in the settings tab.")
             return
 
         sender_options = {s.id: f"{s.sender_name or 'Outreach'} <{s.email}> (Today: {s.sent_today}/{s.daily_limit})" for s in senders}
@@ -60,7 +60,7 @@ def render_send_campaign():
         with col2:
             batch_limit = st.number_input("📦 Maximum emails in this batch", min_value=1, max_value=500, value=50)
         with col3:
-            dry_run = st.checkbox("🧪 Dry-Run Mode (Test without actually sending)", value=False, help="Simulates the campaign without hitting SMTP or SendGrid APIs.")
+            dry_run = st.checkbox("🧪 Dry-Run Mode (Test without actually sending)", value=False, help="Simulates the campaign without hitting SMTP server.")
 
         st.divider()
 
@@ -99,7 +99,7 @@ def render_send_campaign():
             progress_bar = st.progress(0.0)
             status_text = st.empty()
 
-            sender = MailForgeSender()
+            sender = MailForgeBulkSender(db)
             
             success_count = 0
             failed_count = 0
@@ -120,7 +120,9 @@ def render_send_campaign():
                 status_text.text(f"Sending outreach email to {rec_name}... ({idx+1}/{total_sends})")
                 progress_bar.progress((idx + 1) / total_sends)
 
-                res = sender.send_draft(draft_id, selected_sender_id, dry_run=dry_run)
+                selected_sender_obj = db.query(SenderAccount).filter(SenderAccount.id == selected_sender_id).first()
+                recipient_email = l_obj.email if l_obj else getattr(d_obj, "recipient_email", None)
+                res = sender.send_one(d_obj, selected_sender_obj, recipient_email, dry_run=dry_run)
                 if res["success"]:
                     success_count += 1
                 else:

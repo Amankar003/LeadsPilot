@@ -12,7 +12,7 @@ email-validator
 phonenumbers
 rapidfuzz
 # Removed gemini: google-genai
-sendgrid
+# Removed sendgrid
 apscheduler
 loguru
 selenium

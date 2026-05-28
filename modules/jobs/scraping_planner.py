@@ -9,8 +9,30 @@ from utils.constants import JOB_RUNNING, JOB_COMPLETED, JOB_FAILED, JOB_STOPPED,
 import datetime
 from utils.logging_utils import get_logger
 from utils.type_utils import safe_float, safe_int
+from config.database import SessionLocal
+from modules.database.models import ScrapingJob
 
 logger = get_logger(__name__)
+
+def update_job_stats(job_id, scraped_delta=0, saved_delta=0, duplicate_delta=0, failed_delta=0, status=None):
+    """Safely update job statistics using a fresh short-lived session."""
+    db = SessionLocal()
+    try:
+        job = db.query(ScrapingJob).filter(ScrapingJob.id == job_id).first()
+        if not job:
+            return None
+        if scraped_delta: job.total_scraped += scraped_delta
+        if saved_delta: job.total_saved += saved_delta
+        if duplicate_delta: job.total_duplicates += duplicate_delta
+        if failed_delta: job.total_failed += failed_delta
+        if status: job.status = status
+        db.commit()
+        return job
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to update job stats for {job_id}: {e}")
+    finally:
+        db.close()
 
 def is_fake_business_name(name, query=""):
     """
@@ -89,69 +111,76 @@ class ScrapingPlanner:
             return
             
         try:
-            queries = [q.strip() for q in job.category.split('\n') if q.strip()]
+            # Extract basic primitives so we don't pass the ORM object across long-running tasks
+            job_category = job.category
+            job_platform = job.platform
+            job_location = job.location
+            job_campaign_id = job.campaign_id
+            job_limit = job.limit
+            job_enable_fallback = job.enable_fallback
+            job_max_fallback_results = job.max_fallback_results
+            
+            queries = [q.strip() for q in job_category.split('\n') if q.strip()]
             
             for query in queries:
-                # Check for stop signal
-                self.db.refresh(job)
-                if job.status == JOB_STOPPED:
+                def should_stop():
+                    db = SessionLocal()
+                    try:
+                        j = db.query(ScrapingJob).filter(ScrapingJob.id == job_id).first()
+                        return j.status == JOB_STOPPED if j else False
+                    finally:
+                        db.close()
+
+                if should_stop():
                     logger.info(f"Job {job_id} stopped by user.")
                     break
-                
-                def should_stop():
-                    self.db.refresh(job)
-                    return job.status == JOB_STOPPED
 
-                logger.info(f"Starting scrape for query: {query} using platform: {job.platform}")
-                
-                leads_found_before = job.total_saved
+                logger.info(f"Starting scrape for query: {query} using platform: {job_platform}")
                 
                 # Primary scraper
                 try:
                     from utils.constants import PLATFORM_SERPER_BULK
-                    if job.platform == PLATFORM_SERPER_BULK:
+                    if job_platform == PLATFORM_SERPER_BULK:
                         from modules.scraping.bulk_serper_runner import run_bulk_serper_scraping
-                        # Bulk runner handles its own internal loop and website scraping
                         run_bulk_serper_scraping(
                             db=self.db,
-                            campaign_id=job.campaign_id,
-                            job_id=job.id,
+                            campaign_id=job_campaign_id,
+                            job_id=job_id,
                             main_query=query,
-                            location=job.location,
+                            location=job_location,
                             target_count=10000,
                             scrape_websites=True
                         )
-                        # Mark as processed so it doesn't try fallback
                         leads_count = 1 
                     else:
-                        scraper = get_scraper(job.platform)
+                        scraper = get_scraper(job_platform)
                         leads_count = 0
-                        results = self._process_leads(job, scraper, query, should_stop)
+                        results = self._process_leads(job_id, job_campaign_id, job_location, job_limit, scraper, query, should_stop)
                         if results is None:
-                            logger.warning(f"Scraper for {job.platform} returned None, using empty list.")
+                            logger.warning(f"Scraper for {job_platform} returned None, using empty list.")
                             results = []
                         
                         for lead_data in results:
                             leads_count += 1
                     
-                    logger.info(f"Query '{query}': Scraping completed for {job.platform}")
+                    logger.info(f"Query '{query}': Scraping completed for {job_platform}")
                     
                 except Exception as e:
-                    logger.error(f"Error with {job.platform} scraper: {e}")
+                    logger.error(f"Error with {job_platform} scraper: {e}")
                     leads_count = 0
                 
                 # Fallback to Google Maps if SERP didn't produce results
-                if (job.enable_fallback and 
-                    job.platform == PLATFORM_GOOGLE_SERP and 
+                if (job_enable_fallback and 
+                    job_platform == PLATFORM_GOOGLE_SERP and 
                     leads_count == 0 and 
-                    job.status != JOB_STOPPED):
+                    not should_stop()):
                     
                     logger.warning(f"No leads found with SERP. Trying fallback with Google Maps...")
                     try:
                         fallback_scraper = GoogleMapsScraper()
-                        fallback_limit = job.max_fallback_results if job.max_fallback_results else job.limit
+                        fallback_limit = job_max_fallback_results if job_max_fallback_results else job_limit
                         
-                        for lead_data in self._process_leads(job, fallback_scraper, query, should_stop, fallback_limit):
+                        for lead_data in self._process_leads(job_id, job_campaign_id, job_location, fallback_limit, fallback_scraper, query, should_stop):
                             pass
                         
                         logger.info(f"Fallback completed for query: {query}")
@@ -160,150 +189,146 @@ class ScrapingPlanner:
                     finally:
                         fallback_scraper.close()
                 
-                if job.status == JOB_STOPPED: 
+                if should_stop(): 
                     break
 
-            if job.status != JOB_STOPPED:
-                self.job_repo.update_status(job_id, JOB_COMPLETED, completed_at=datetime.datetime.utcnow())
+            if not should_stop():
+                update_job_stats(job_id, status=JOB_COMPLETED)
+                # also update completion time
+                db_end = SessionLocal()
+                try:
+                    j_end = db_end.query(ScrapingJob).filter(ScrapingJob.id == job_id).first()
+                    if j_end:
+                        j_end.completed_at = datetime.datetime.utcnow()
+                        db_end.commit()
+                finally:
+                    db_end.close()
             
         except Exception as e:
             logger.error(f"Error executing job {job_id}: {e}")
-            self.job_repo.update_status(job_id, JOB_FAILED)
-            self.db.commit()
+            update_job_stats(job_id, status=JOB_FAILED)
 
-    def _process_leads(self, job, scraper, query, should_stop, limit=None):
+    def _process_leads(self, job_id, campaign_id, location, limit, scraper, query, should_stop):
         """
-        Process leads from scraper and save them to database.
+        Process leads from scraper and save them to database using a safe local session.
         """
-        if limit is None:
-            limit = job.limit
-            
-        scraped_results = scraper.scrape(query=query, limit=limit, location=job.location, should_stop=should_stop)
+        scraped_results = scraper.scrape(query=query, limit=limit, location=location, should_stop=should_stop)
         if scraped_results is None:
             logger.warning(f"Scraper returned None for query: {query}")
             return
             
-        for lead_data in scraped_results:
-            # Check for stop signal again during processing
-            self.db.refresh(job)
-            if job.status == JOB_STOPPED: 
-                break
-
-            business_name = lead_data.get("business_name", "")
-            source_url = lead_data.get("google_maps_url", "")
-            if not source_url:
-                source_url = lead_data.get("raw_data", {}).get("source_url", "")
-
-            # VALIDATION LOGIC:
-            # 1. Ensure the business name is a real name, not a placeholder (e.g., 'Phone Lead', 'Email Lead')
-            #    or just the raw search query. Empty names or placeholder names are skipped.
-            if is_fake_business_name(business_name, query):
-                logger.info(f"Skipping lead due to fake business name: {business_name}")
-                continue
-
-            # 2. Ensure the source URL is an actual business page or profile, not a Google search result URL.
-            #    We don't want to save search engine URLs as the business website or source.
-            if is_invalid_source_url(source_url):
-                logger.info(f"Skipping lead due to invalid source URL: {source_url}")
-                continue
-
-            # ----------------------------------------------------
-            # Dork Optimizer URL Exclusions Filter
-            # ----------------------------------------------------
-            from modules.dork_optimizer.dork_filters import is_low_quality_dork_url
-            website_url = lead_data.get('website') or lead_data.get('google_maps_url')
-            if website_url and is_low_quality_dork_url(website_url, exclude_directories=True):
-                logger.info(f"Skipping low quality dork URL: {website_url}")
-                job.total_failed += 1
-                self.db.commit()
-                continue
-
-            # Website scraping for emails
-            email_source = "website"
-            email_confidence = "medium"
+        # Create a fresh local session for saving leads because the scraper might have taken a long time
+        # causing the outer session to become stale or timeout.
+        local_db = SessionLocal()
+        try:
+            local_lead_repo = LeadRepository(local_db)
+            local_deduplicator = Deduplicator(local_lead_repo)
             
-            if lead_data.get('website'):
-                emails = self.website_scraper.extract_emails_from_url(lead_data['website'])
-                if emails:
-                    lead_data['email'] = emails[0]
-                    lead_data['has_email'] = True
-                    lead_data['raw_data']['all_emails'] = emails
-                    logger.info(f"Website email found for {lead_data['business_name']}")
-            
-            lead_data['email_source'] = email_source if lead_data.get('email') else None
-            lead_data['email_confidence'] = email_confidence if lead_data.get('email') else None
+            for lead_data in scraped_results:
+                if should_stop(): 
+                    break
+
+                business_name = lead_data.get("business_name", "")
+                source_url = lead_data.get("google_maps_url", "")
+                if not source_url:
+                    source_url = lead_data.get("raw_data", {}).get("source_url", "")
+
+                if is_fake_business_name(business_name, query):
+                    logger.info(f"Skipping lead due to fake business name: {business_name}")
+                    continue
+
+                if is_invalid_source_url(source_url):
+                    logger.info(f"Skipping lead due to invalid source URL: {source_url}")
+                    continue
+
+                from modules.dork_optimizer.dork_filters import is_low_quality_dork_url
+                website_url = lead_data.get('website') or lead_data.get('google_maps_url')
+                if website_url and is_low_quality_dork_url(website_url, exclude_directories=True):
+                    logger.info(f"Skipping low quality dork URL: {website_url}")
+                    update_job_stats(job_id, failed_delta=1)
+                    continue
+
+                email_source = "website"
+                email_confidence = "medium"
+                
+                if lead_data.get('website'):
+                    emails = self.website_scraper.extract_emails_from_url(lead_data['website'])
+                    if emails:
+                        lead_data['email'] = emails[0]
+                        lead_data['has_email'] = True
+                        lead_data['raw_data']['all_emails'] = emails
+                        logger.info(f"Website email found for {lead_data['business_name']}")
+                
+                lead_data['email_source'] = email_source if lead_data.get('email') else None
+                lead_data['email_confidence'] = email_confidence if lead_data.get('email') else None
+                        
+                if lead_data.get('phone'):
+                    lead_data['has_phone'] = True
+                if lead_data.get('website'):
+                    lead_data['has_website'] = True
                     
-            # Update flags
-            if lead_data.get('phone'):
-                lead_data['has_phone'] = True
-            if lead_data.get('website'):
-                lead_data['has_website'] = True
-                
-            job.total_scraped += 1
+                update_job_stats(job_id, scraped_delta=1)
 
-            # Deduplication check
-            if self.deduplicator.is_duplicate(lead_data):
-                job.total_duplicates += 1
-                self.db.commit()
-                continue
+                if local_deduplicator.is_duplicate(lead_data):
+                    update_job_stats(job_id, duplicate_delta=1)
+                    continue
+                    
+                from modules.dork_optimizer.dork_filters import calculate_lead_quality_score
+                lead_quality_score = calculate_lead_quality_score(lead_data)
                 
-            # ----------------------------------------------------
-            # Dork Optimizer Quality Scoring & Database Linkages
-            # ----------------------------------------------------
-            from modules.dork_optimizer.dork_filters import calculate_lead_quality_score
-            lead_quality_score = calculate_lead_quality_score(lead_data)
-            
-            # Find matching GeneratedDork to link original metadata
-            dork_type = None
-            opportunity_id = None
-            try:
-                from modules.database.models import GeneratedDork as G_Dork
-                d_record = self.db.query(G_Dork).filter(G_Dork.dork == query).first()
-                if d_record:
-                    dork_type = d_record.dork_type
-                    opportunity_id = d_record.opportunity_id
-            except Exception:
-                pass
-                
-            lead_data["raw_data"] = lead_data.get("raw_data") or {}
-            lead_data["raw_data"]["dork_quality_score"] = lead_quality_score
-            lead_data["raw_data"]["original_dork"] = query
-            lead_data["raw_data"]["source"] = "dork_optimizer"
-            if dork_type:
-                lead_data["raw_data"]["dork_type"] = dork_type
-            if opportunity_id:
-                lead_data["raw_data"]["opportunity_id"] = opportunity_id
-                
-            if d_record:
-                lead_data["source"] = "serper_bulk_dork"
+                dork_type = None
+                opportunity_id = None
+                try:
+                    from modules.database.models import GeneratedDork as G_Dork
+                    d_record = local_db.query(G_Dork).filter(G_Dork.dork == query).first()
+                    if d_record:
+                        dork_type = d_record.dork_type
+                        opportunity_id = d_record.opportunity_id
+                except Exception:
+                    pass
+                    
+                lead_data["raw_data"] = lead_data.get("raw_data") or {}
+                lead_data["raw_data"]["dork_quality_score"] = lead_quality_score
+                lead_data["raw_data"]["original_dork"] = query
+                lead_data["raw_data"]["source"] = "dork_optimizer"
+                if dork_type:
+                    lead_data["raw_data"]["dork_type"] = dork_type
+                if opportunity_id:
+                    lead_data["raw_data"]["opportunity_id"] = opportunity_id
+                    
+                try:
+                    if d_record:
+                        lead_data["source"] = "serper_bulk_dork"
+                except NameError:
+                    pass
 
-            # Save lead
-            try:
-                self.lead_repo.create(
-                    campaign_id=job.campaign_id,
-                    scraping_job_id=job.id,
-                    business_name=lead_data['business_name'],
-                    category=query,
-                    phone=lead_data.get('phone'),
-                    email=lead_data.get('email'),
-                    website=lead_data.get('website'),
-                    address=lead_data.get('address'),
-                    has_email=lead_data.get('has_email', False),
-                    has_phone=lead_data.get('has_phone', False),
-                    has_website=lead_data.get('has_website', False),
-                    email_source=lead_data.get('email_source'),
-                    email_confidence=lead_data.get('email_confidence'),
-                    lead_hash=lead_data.get('lead_hash'),
-                    source=lead_data.get('source'),
-                    google_maps_url=lead_data.get('google_maps_url'),
-                    rating=safe_float(lead_data.get('rating')),
-                    reviews_count=safe_int(lead_data.get('reviews_count')),
-                    raw_data=lead_data.get('raw_data', {})
-                )
-                job.total_saved += 1
-            except Exception as e:
-                logger.error(f"Error saving lead: {e}")
-                self.db.rollback()
+                try:
+                    local_lead_repo.create(
+                        campaign_id=campaign_id,
+                        scraping_job_id=job_id,
+                        business_name=lead_data['business_name'],
+                        category=query,
+                        phone=lead_data.get('phone'),
+                        email=lead_data.get('email'),
+                        website=lead_data.get('website'),
+                        address=lead_data.get('address'),
+                        has_email=lead_data.get('has_email', False),
+                        has_phone=lead_data.get('has_phone', False),
+                        has_website=lead_data.get('has_website', False),
+                        email_source=lead_data.get('email_source'),
+                        email_confidence=lead_data.get('email_confidence'),
+                        lead_hash=lead_data.get('lead_hash'),
+                        source=lead_data.get('source'),
+                        google_maps_url=lead_data.get('google_maps_url'),
+                        rating=safe_float(lead_data.get('rating')),
+                        reviews_count=safe_int(lead_data.get('reviews_count')),
+                        raw_data=lead_data.get('raw_data', {})
+                    )
+                    update_job_stats(job_id, saved_delta=1)
+                except Exception as e:
+                    logger.error(f"Error saving lead: {e}")
+                    local_db.rollback()
 
-            self.db.commit()
-            yield lead_data
+                yield lead_data
+        finally:
+            local_db.close()

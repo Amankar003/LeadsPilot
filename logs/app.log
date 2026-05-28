@@ -28231,3 +28231,204 @@ site:com "General Business" "Miami" "contact us" -yelp -angi -thumbtack -jobs -c
 "General Business" "Miami" "WhatsApp" -yelp -angi -thumbtack -jobs -career -hiring -news -blog -pdf -wikipedia -youtube -facebook -instagram -linkedin -reddit -quora
 "General Business" "Miami" "business" -facebook -instagram -linkedin -yelp -angi -thumbtack -jobs -career -hiring -news -blog -pdf -wikipedia -youtube -facebook -instagram -linkedin -reddit -quora in Noida)
 2026-05-28 12:19:16.201 | INFO     | modules.jobs.scraping_planner:execute_job:105 - Starting scrape for query: "General Business" "Miami" "contact" -yelp -angi -thumbtack -jobs -career -hiring -news -blog -pdf -wikipedia -youtube -facebook -instagram -linkedin -reddit -quora using platform: serper_bulk
+2026-05-28 12:42:45.527 | INFO     | modules.jobs.worker:start:34 - Background job worker started successfully.
+2026-05-28 12:45:59.003 | INFO     | modules.jobs.scraping_planner:execute_job:105 - Starting scrape for query: General Business" "Miami" "contact" -yelp -angi -thumbtack -jobs -career -hiring -news -blog -pdf -wikipedia -youtube -facebook -instagram -linkedin -reddit -quora using platform: serper_bulk
+2026-05-28 13:00:47.150 | INFO     | modules.jobs.scraping_planner:execute_job:137 - Query 'General Business" "Miami" "contact" -yelp -angi -thumbtack -jobs -career -hiring -news -blog -pdf -wikipedia -youtube -facebook -instagram -linkedin -reddit -quora': Scraping completed for serper_bulk
+2026-05-28 13:15:13.010 | INFO     | modules.analysis.job_processor:start_processor_thread:225 - Started analysis queue processor thread
+2026-05-28 13:15:14.366 | INFO     | modules.analysis.job_processor:_process_queue:90 - Processing analysis job cc8df292-f6ed-4c19-a0f7-72e58d07cd7b for lead dc1dbe5a-ba7b-4ba3-aeb7-44b08dc1aa38
+2026-05-28 13:15:14.743 | INFO     | modules.analysis.full_audit_runner:run_full_lead_audit:32 - Starting full audit for lead: Contact Page - Miami-Dade Chamber of Commerce (URL: https://m-dcc.org/contact-page)
+2026-05-28 13:15:36.493 | INFO     | modules.analysis.ai_report_generator:generate_ai_report:117 - Sending audit facts to Groq AI for report generation...
+2026-05-28 13:15:36.493 | INFO     | modules.ai.ai_client:generate_json:37 - Attempting Groq generation with model llama-3.3-70b-versatile...
+2026-05-28 13:15:36.910 | ERROR    | modules.ai.ai_client:generate_json:49 - Groq JSON generation failed: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}. Switching to Gemini fallback...
+2026-05-28 13:15:36.911 | INFO     | modules.ai.ai_client:generate_json:54 - Attempting Gemini fallback with model gemini-2.0-flash...
+2026-05-28 13:15:37.387 | ERROR    | modules.ai.ai_client:generate_json:70 - Gemini API returned error status 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash\nPlease retry in 23.071543047s.",
+    "status": "RESOURCE_EXHAUSTED",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.Help",
+        "links": [
+          {
+            "description": "Learn more about Gemini API quotas",
+            "url": "https://ai.google.dev/gemini-api/docs/rate-limits"
+          }
+        ]
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        "violations": [
+          {
+            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+            "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+            "quotaDimensions": {
+              "model": "gemini-2.0-flash",
+              "location": "global"
+            }
+          },
+          {
+            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+            "quotaId": "GenerateRequestsPerMinutePerProjectPerModel-FreeTier",
+            "quotaDimensions": {
+              "location": "global",
+              "model": "gemini-2.0-flash"
+            }
+          },
+          {
+            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count",
+            "quotaId": "GenerateContentInputTokensPerModelPerMinute-FreeTier",
+            "quotaDimensions": {
+              "location": "global",
+              "model": "gemini-2.0-flash"
+            }
+          }
+        ]
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.RetryInfo",
+        "retryDelay": "23s"
+      }
+    ]
+  }
+}
+
+2026-05-28 13:15:37.388 | WARNING  | modules.ai.ai_client:generate_json:76 - Both Groq and Gemini failed to generate JSON. Returning a clean local template.
+2026-05-28 13:15:37.390 | INFO     | modules.analysis.full_audit_runner:run_full_lead_audit:105 - Audit completed in 22.65s for Contact Page - Miami-Dade Chamber of Commerce
+2026-05-28 13:15:38.416 | ERROR    | modules.analysis.job_processor:_process_queue:210 - Queue processor error: This Session's transaction has been rolled back due to a previous exception during flush. To begin a new transaction with this Session, first issue Session.rollback(). Original exception was: (pg8000.dbapi.ProgrammingError) {'S': 'ERROR', 'V': 'ERROR', 'C': '42703', 'M': 'column "job_id" of relation "pain_points" does not exist', 'P': '39', 'F': 'parse_target.c', 'L': '1065', 'R': 'checkInsertTargets'}
+[SQL: INSERT INTO pain_points (id, lead_id, job_id, type, severity, title, description, evidence, business_impact, recommended_service, created_at) VALUES (%s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCH ... 292 characters truncated ... R, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::TIMESTAMP WITHOUT TIME ZONE)]
+[parameters: ('9d819884-b052-4ba3-bd10-7a183ce6e581', 'dc1dbe5a-ba7b-4ba3-aeb7-44b08dc1aa38', 'cc8df292-f6ed-4c19-a0f7-72e58d07cd7b', 'seo', 'High', 'Missing essential SEO tags', 'Crucial meta tags (title or description) are missing.', "Homepage lacks <title> or <meta name='description'>.", 'Search engine visibility will be significantly lower, resulting in fewer organic customers.', 'Technical SEO', datetime.datetime(2026, 5, 28, 7, 45, 37, 960619), 'f51e6a03-d2cc-4b3f-bac0-acf8cfcd4c7c', 'dc1dbe5a-ba7b-4ba3-aeb7-44b08dc1aa38', 'cc8df292-f6ed-4c19-a0f7-72e58d07cd7b', 'conversion', 'Medium', 'No WhatsApp integration', 'Missing modern instant messaging CTA.', "No 'wa.me' or WhatsApp buttons found.", 'Missed opportunities from mobile users who prefer quick chats over calls.', 'WhatsApp Integration', datetime.datetime(2026, 5, 28, 7, 45, 37, 960627), '0bfafb14-37d4-4eba-9872-2d865b87df66', 'dc1dbe5a-ba7b-4ba3-aeb7-44b08dc1aa38', 'cc8df292-f6ed-4c19-a0f7-72e58d07cd7b', 'trust', 'Medium', 'Missing social proof', 'No testimonials or reviews found on the homepage.', 'No review keywords or testimonial blocks detected.', 'Lower conversion rates as new visitors have no proof of past success.', 'Landing Page Development', datetime.datetime(2026, 5, 28, 7, 45, 37, 960632))]
+(Background on this error at: https://sqlalche.me/e/20/f405) (Background on this error at: https://sqlalche.me/e/20/7s2a)
+2026-05-28 13:15:46.653 | INFO     | modules.analysis.job_processor:_process_queue:90 - Processing analysis job e0888a46-cc52-4cb1-9278-f6ff86f694d9 for lead d2805cc2-0c1c-41cc-953f-08a43d2ffcb1
+2026-05-28 13:15:47.205 | INFO     | modules.analysis.full_audit_runner:run_full_lead_audit:32 - Starting full audit for lead: Contact Us - Florida Business Development Corporation (URL: https://www.fbdc.net/contact)
+2026-05-28 13:16:00.977 | INFO     | modules.analysis.ai_report_generator:generate_ai_report:117 - Sending audit facts to Groq AI for report generation...
+2026-05-28 13:16:00.977 | INFO     | modules.ai.ai_client:generate_json:37 - Attempting Groq generation with model llama-3.3-70b-versatile...
+2026-05-28 13:16:01.060 | ERROR    | modules.ai.ai_client:generate_json:49 - Groq JSON generation failed: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}. Switching to Gemini fallback...
+2026-05-28 13:16:01.060 | INFO     | modules.ai.ai_client:generate_json:54 - Attempting Gemini fallback with model gemini-2.0-flash...
+2026-05-28 13:16:01.846 | ERROR    | modules.ai.ai_client:generate_json:70 - Gemini API returned error status 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash\nPlease retry in 58.607110014s.",
+    "status": "RESOURCE_EXHAUSTED",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.Help",
+        "links": [
+          {
+            "description": "Learn more about Gemini API quotas",
+            "url": "https://ai.google.dev/gemini-api/docs/rate-limits"
+          }
+        ]
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        "violations": [
+          {
+            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count",
+            "quotaId": "GenerateContentInputTokensPerModelPerMinute-FreeTier",
+            "quotaDimensions": {
+              "location": "global",
+              "model": "gemini-2.0-flash"
+            }
+          },
+          {
+            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+            "quotaId": "GenerateRequestsPerMinutePerProjectPerModel-FreeTier",
+            "quotaDimensions": {
+              "location": "global",
+              "model": "gemini-2.0-flash"
+            }
+          },
+          {
+            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+            "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+            "quotaDimensions": {
+              "location": "global",
+              "model": "gemini-2.0-flash"
+            }
+          }
+        ]
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.RetryInfo",
+        "retryDelay": "58s"
+      }
+    ]
+  }
+}
+
+2026-05-28 13:16:01.847 | WARNING  | modules.ai.ai_client:generate_json:76 - Both Groq and Gemini failed to generate JSON. Returning a clean local template.
+2026-05-28 13:16:01.849 | INFO     | modules.analysis.full_audit_runner:run_full_lead_audit:105 - Audit completed in 14.64s for Contact Us - Florida Business Development Corporation
+2026-05-28 13:16:02.611 | ERROR    | modules.analysis.job_processor:_process_queue:210 - Queue processor error: This Session's transaction has been rolled back due to a previous exception during flush. To begin a new transaction with this Session, first issue Session.rollback(). Original exception was: (pg8000.dbapi.ProgrammingError) {'S': 'ERROR', 'V': 'ERROR', 'C': '42703', 'M': 'column "job_id" of relation "pain_points" does not exist', 'P': '39', 'F': 'parse_target.c', 'L': '1065', 'R': 'checkInsertTargets'}
+[SQL: INSERT INTO pain_points (id, lead_id, job_id, type, severity, title, description, evidence, business_impact, recommended_service, created_at) VALUES (%s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::TIMESTAMP WITHOUT TIME ZONE)]
+[parameters: ('edb5c2c6-f455-4415-a68c-d87ff5d949bf', 'd2805cc2-0c1c-41cc-953f-08a43d2ffcb1', 'e0888a46-cc52-4cb1-9278-f6ff86f694d9', 'conversion', 'Medium', 'No WhatsApp integration', 'Missing modern instant messaging CTA.', "No 'wa.me' or WhatsApp buttons found.", 'Missed opportunities from mobile users who prefer quick chats over calls.', 'WhatsApp Integration', datetime.datetime(2026, 5, 28, 7, 46, 2, 309341))]
+(Background on this error at: https://sqlalche.me/e/20/f405) (Background on this error at: https://sqlalche.me/e/20/7s2a)
+2026-05-28 13:16:05.685 | INFO     | modules.analysis.job_processor:_process_queue:90 - Processing analysis job 61b19c8d-bf27-4037-9943-5fbecdb2d25b for lead 8ab4c37f-c2bf-49b0-a3e3-cd53d76f2196
+2026-05-28 13:16:06.068 | INFO     | modules.analysis.full_audit_runner:run_full_lead_audit:32 - Starting full audit for lead: Contact - Bayside Marketplace (URL: https://baysidemarketplace.com/contact/)
+2026-05-28 13:16:23.393 | INFO     | modules.analysis.ai_report_generator:generate_ai_report:117 - Sending audit facts to Groq AI for report generation...
+2026-05-28 13:16:23.394 | INFO     | modules.ai.ai_client:generate_json:37 - Attempting Groq generation with model llama-3.3-70b-versatile...
+2026-05-28 13:16:23.463 | ERROR    | modules.ai.ai_client:generate_json:49 - Groq JSON generation failed: Error code: 401 - {'error': {'message': 'Invalid API Key', 'type': 'invalid_request_error', 'code': 'invalid_api_key'}}. Switching to Gemini fallback...
+2026-05-28 13:16:23.463 | INFO     | modules.ai.ai_client:generate_json:54 - Attempting Gemini fallback with model gemini-2.0-flash...
+2026-05-28 13:16:23.869 | ERROR    | modules.ai.ai_client:generate_json:70 - Gemini API returned error status 429: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash\n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-2.0-flash\nPlease retry in 36.589808054s.",
+    "status": "RESOURCE_EXHAUSTED",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.Help",
+        "links": [
+          {
+            "description": "Learn more about Gemini API quotas",
+            "url": "https://ai.google.dev/gemini-api/docs/rate-limits"
+          }
+        ]
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        "violations": [
+          {
+            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+            "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+            "quotaDimensions": {
+              "location": "global",
+              "model": "gemini-2.0-flash"
+            }
+          },
+          {
+            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+            "quotaId": "GenerateRequestsPerMinutePerProjectPerModel-FreeTier",
+            "quotaDimensions": {
+              "location": "global",
+              "model": "gemini-2.0-flash"
+            }
+          },
+          {
+            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_input_token_count",
+            "quotaId": "GenerateContentInputTokensPerModelPerMinute-FreeTier",
+            "quotaDimensions": {
+              "location": "global",
+              "model": "gemini-2.0-flash"
+            }
+          }
+        ]
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.RetryInfo",
+        "retryDelay": "36s"
+      }
+    ]
+  }
+}
+
+2026-05-28 13:16:23.869 | WARNING  | modules.ai.ai_client:generate_json:76 - Both Groq and Gemini failed to generate JSON. Returning a clean local template.
+2026-05-28 13:16:23.871 | INFO     | modules.analysis.full_audit_runner:run_full_lead_audit:105 - Audit completed in 17.80s for Contact - Bayside Marketplace
+2026-05-28 13:16:24.663 | ERROR    | modules.analysis.job_processor:_process_queue:210 - Queue processor error: This Session's transaction has been rolled back due to a previous exception during flush. To begin a new transaction with this Session, first issue Session.rollback(). Original exception was: (pg8000.dbapi.ProgrammingError) {'S': 'ERROR', 'V': 'ERROR', 'C': '42703', 'M': 'column "job_id" of relation "pain_points" does not exist', 'P': '39', 'F': 'parse_target.c', 'L': '1065', 'R': 'checkInsertTargets'}
+[SQL: INSERT INTO pain_points (id, lead_id, job_id, type, severity, title, description, evidence, business_impact, recommended_service, created_at) VALUES (%s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCH ... 292 characters truncated ... R, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::TIMESTAMP WITHOUT TIME ZONE)]
+[parameters: ('c7c34665-c846-4653-b4e8-bee8c7609a00', '8ab4c37f-c2bf-49b0-a3e3-cd53d76f2196', '61b19c8d-bf27-4037-9943-5fbecdb2d25b', 'seo', 'High', 'Missing essential SEO tags', 'Crucial meta tags (title or description) are missing.', "Homepage lacks <title> or <meta name='description'>.", 'Search engine visibility will be significantly lower, resulting in fewer organic customers.', 'Technical SEO', datetime.datetime(2026, 5, 28, 7, 46, 24, 372607), '0ee87a9a-36ab-44ed-8ed7-ca3ff628f26e', '8ab4c37f-c2bf-49b0-a3e3-cd53d76f2196', '61b19c8d-bf27-4037-9943-5fbecdb2d25b', 'conversion', 'Medium', 'No WhatsApp integration', 'Missing modern instant messaging CTA.', "No 'wa.me' or WhatsApp buttons found.", 'Missed opportunities from mobile users who prefer quick chats over calls.', 'WhatsApp Integration', datetime.datetime(2026, 5, 28, 7, 46, 24, 372616), '77f3849c-3b86-4e7c-bb7f-ac3f2481aeb6', '8ab4c37f-c2bf-49b0-a3e3-cd53d76f2196', '61b19c8d-bf27-4037-9943-5fbecdb2d25b', 'trust', 'Medium', 'Missing social proof', 'No testimonials or reviews found on the homepage.', 'No review keywords or testimonial blocks detected.', 'Lower conversion rates as new visitors have no proof of past success.', 'Landing Page Development', datetime.datetime(2026, 5, 28, 7, 46, 24, 372620))]
+(Background on this error at: https://sqlalche.me/e/20/f405) (Background on this error at: https://sqlalche.me/e/20/7s2a)
+2026-05-28 13:45:31.325 | ERROR    | modules.jobs.worker:_worker_loop:55 - Worker exception: (pg8000.exceptions.InterfaceError) Can't create a connection to host aws-1-ap-southeast-1.pooler.supabase.com and port 5432 (timeout is 10 and source_address is None).
+(Background on this error at: https://sqlalche.me/e/20/rvf5)
+2026-05-28 14:13:06.341 | ERROR    | modules.jobs.worker:_worker_loop:55 - Worker exception: (pg8000.exceptions.InterfaceError) Can't create a connection to host aws-1-ap-southeast-1.pooler.supabase.com and port 5432 (timeout is 10 and source_address is None).
+(Background on this error at: https://sqlalche.me/e/20/rvf5)
+2026-05-28 14:55:40.833 | INFO     | modules.jobs.worker:start:34 - Background job worker started successfully.

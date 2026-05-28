@@ -2,7 +2,7 @@ import streamlit as st
 import os
 from config.database import SessionLocal
 from config.settings import (
-    DATABASE_URL, GEMINI_API_KEY, SENDGRID_API_KEY, SENDGRID_FROM_EMAIL,
+    DATABASE_URL, GROQ_API_KEY, GROQ_MODEL,
     DEFAULT_EMAIL_DELAY_SECONDS, MAX_EMAILS_PER_RUN, MAX_FOLLOWUPS
 )
 from modules.ui.theme import page_header, empty_state, info_card, make_dataframe_arrow_compatible
@@ -27,22 +27,25 @@ def render_settings():
             st.error("❌ Database")
 
     with c2:
-        if GEMINI_API_KEY and GEMINI_API_KEY not in ("", "your_gemini_api_key"):
-            st.success("✅ Gemini AI")
+        if GROQ_API_KEY and GROQ_API_KEY not in ("", "your_groq_api_key_here"):
+            try:
+                from modules.ai.ai_client import AIClient
+                client = AIClient()
+                health = client.health_check()
+                if health.get("status") == "success":
+                    st.success("✅ Groq AI")
+                else:
+                    st.warning(f"⚠️ Groq AI: {health.get('message', 'Failed')}")
+            except:
+                st.warning("⚠️ Groq AI")
         else:
-            st.warning("⚠️ Gemini AI")
+            st.error("❌ Groq AI")
 
     with c3:
-        if SENDGRID_API_KEY and SENDGRID_API_KEY not in ("", "your_sendgrid_api_key"):
-            st.success("✅ SendGrid")
-        else:
-            st.warning("⚠️ SendGrid")
+        st.success("✅ MailForge SMTP")
 
     with c4:
-        if SENDGRID_FROM_EMAIL and SENDGRID_FROM_EMAIL not in ("", "hello@yourdomain.com"):
-            st.success(f"✅ Sender")
-        else:
-            st.warning("⚠️ Sender Email")
+        st.empty()
 
     # ── Configuration ──
     st.divider()
@@ -50,7 +53,7 @@ def render_settings():
     c1, c2 = st.columns(2)
     with c1:
         info_card("Database", f"`{DATABASE_URL[:35]}…`")
-        info_card("Gemini Model", f"`{os.getenv('GEMINI_MODEL', 'gemini-2.0-flash')}`")
+        info_card("Groq Model", f"`{GROQ_MODEL}`")
     with c2:
         info_card("Email Delay", f"{DEFAULT_EMAIL_DELAY_SECONDS} seconds between emails")
         info_card("Limits", f"Max {MAX_EMAILS_PER_RUN} emails/run • Max {MAX_FOLLOWUPS} follow-ups/lead")
@@ -130,12 +133,11 @@ Edit your `.env` file in the project root:
 
 ```env
 # AI
-GEMINI_API_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-2.0-flash
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
 
-# Email
-SENDGRID_API_KEY=your_sendgrid_api_key
-SENDGRID_FROM_EMAIL=hello@yourdomain.com
+# Email Settings
+# Set up SMTP Sender Accounts via the MailForge Sender Accounts UI instead of .env
 
 # Safety Limits
 DEFAULT_EMAIL_DELAY_SECONDS=30

@@ -44,10 +44,8 @@ def run_startup_checks():
         optional.append("DATABASE_URL not set, using local SQLite.")
     if not os.getenv("SERPER_API_KEY"):
         optional.append("SERPER_API_KEY missing: Serper features will be limited.")
-    if not os.getenv("GROQ_API_KEY") and not os.getenv("GEMINI_API_KEY"):
-        optional.append("No AI provider key configured. Fallback generation only.")
-    if not os.getenv("SENDGRID_API_KEY"):
-        optional.append("SENDGRID_API_KEY missing. SMTP/manual sender required.")
+    if not os.getenv("GROQ_API_KEY"):
+        optional.append("No Groq API key configured. Fallback generation only.")
     for item in issues:
         st.error(item)
     for item in optional:
@@ -78,11 +76,54 @@ def start_worker():
     return worker
 start_worker()
 
+# Ensure analysis queue processor is running and recover any stuck jobs on startup
+try:
+    from modules.analysis.job_processor import recover_stuck_jobs, start_processor_thread
+    try:
+        recover_stuck_jobs()
+    except Exception:
+        logger.exception("Error while recovering stuck analysis jobs on startup")
+    start_processor_thread()
+except Exception:
+    logger.warning("Analysis job processor not available at startup")
+
 
 # ─── Theme ───
 inject_custom_css()
 
+
+def _get_query_params():
+    """Return query params in a robust way across Streamlit versions.
+    Tries `st.experimental_get_query_params()` then falls back to `st.query_params`.
+    Returns a dict-like mapping (keys -> list-of-values or values).
+    """
+    try:
+        return st.experimental_get_query_params()
+    except Exception:
+        try:
+            qp = getattr(st, "query_params", {})
+            if qp is None:
+                return {}
+            try:
+                return dict(qp)
+            except Exception:
+                return qp
+        except Exception:
+            return {}
+
 # ─── Sidebar ───
+# If a `?page=...` query param is present, set the sidebar radio's session state
+# so the deep link pre-selects the desired page.
+try:
+    qp = _get_query_params().get("page")
+    if qp:
+        qp_val = qp[0] if isinstance(qp, (list, tuple)) else qp
+        if qp_val:
+            st.session_state["Navigation"] = str(qp_val)
+except Exception:
+    pass
+
+    
 with st.sidebar:
     st.markdown("## 🚀 LeadPilot AI")
     st.caption("AI-Powered Lead Generation & Outreach")
@@ -97,7 +138,7 @@ with st.sidebar:
             "Campaigns",
             "Lead Sources",
             "Lead Enrichment",
-            "AI Business Audit",
+            "Lead Intelligence",
             "CRM",
             "MailForge",
             "Settings",
@@ -108,8 +149,43 @@ with st.sidebar:
     st.divider()
     st.caption("v2.0 • LeadPilot AI")
 
+
 # Clean page name (remove emoji prefix)
+# Prefer explicit session state `Navigation` when present so the sidebar selection
+# and routing stay consistent across runs and deep-links.
+page = st.session_state.get("Navigation", page)
 page_clean = page.strip()
+
+# Allow overriding the selected page via URL query param `?page=...` (useful for deep links/testing)
+try:
+    params = _get_query_params()
+    qp = params.get("page")
+    if qp:
+        qp_val = qp[0] if isinstance(qp, (list, tuple)) else qp
+        if qp_val:
+            page = str(qp_val)
+            page_clean = page.strip()
+except Exception:
+    pass
+
+# Direct deep-link handler: if URL requests the intelligence page, render it immediately
+try:
+    params = _get_query_params()
+    qp = params.get("page")
+    if qp:
+        qp_val = qp[0] if isinstance(qp, (list, tuple)) else qp
+        if qp_val and qp_val.strip() in ("Lead Intelligence", "AI Business Audit", "Lead Intelligence Report Engine"):
+            from modules.ui.intelligence_ui import render_analysis_dashboard
+            from modules.ui.report_viewer_ui import render_report_viewer
+            audit_tab, report_tab = st.tabs(["Analysis Queue", "Reports"])
+            with audit_tab:
+                render_analysis_dashboard()
+            with report_tab:
+                render_report_viewer()
+            st.stop()
+except Exception:
+    pass
+
 
 # Skip separator items
 if page_clean.startswith("──"):
@@ -194,7 +270,7 @@ if page_clean == "Dashboard":
 elif page_clean == "Campaigns":
     page_header("➕", "Create Campaign", "Set up a new lead scraping campaign")
 
-    tab1, tab2, tab4, tab3, tab5 = st.tabs(["📍 Scrape via Google Maps", "🔍 Scrape via Google SERP", "🔍 Google SERP Search", "📂 Scrape via Excel/CSV", "🚀 Bulk SERP Scraper (Serper.dev)"])
+    tab1, tab3, tab5 = st.tabs(["📍 Scrape via Google Maps", "📂 Scrape via Excel/CSV", "🚀 Bulk SERP Scraper (Serper.dev)"])
 
     with tab1:
         db = SessionLocal()
@@ -318,288 +394,38 @@ elif page_clean == "Campaigns":
                 finally:
                     db.close()
 
-    with tab2:
-        db = SessionLocal()
-        running_serp_job = None
-        last_serp_job = None
-        try:
-            from modules.database.models import ScrapingJob
-            from utils.constants import PLATFORM_GOOGLE_EMAIL, JOB_RUNNING, JOB_PENDING
-            
-            all_serp_jobs = db.query(ScrapingJob).filter(
-                ScrapingJob.platform == PLATFORM_GOOGLE_EMAIL
-            ).order_by(ScrapingJob.created_at.desc()).all()
-            
-            if all_serp_jobs:
-                last_serp_job = all_serp_jobs[0]
-                if last_serp_job.status in [JOB_RUNNING, JOB_PENDING]:
-                    running_serp_job = last_serp_job
-        finally:
-            db.close()
 
-        if running_serp_job:
-            st.warning(f"⚠️ A Google SERP job is currently running for campaign: **{running_serp_job.campaign_id}**")
-            
-            # Show live metrics
-            c1, c2, c3 = st.columns(3)
-            c1.metric("📦 Scraped", running_serp_job.total_scraped)
-            c2.metric("💾 Saved", running_serp_job.total_saved)
-            c3.metric("🔁 Duplicates", running_serp_job.total_duplicates)
-            
-            if st.button("🛑 Stop Scraping", type="primary", use_container_width=True):
-                db = SessionLocal()
-                try:
-                    from utils.constants import JOB_STOPPED
-                    job = db.query(ScrapingJob).filter(ScrapingJob.id == running_serp_job.id).first()
-                    if job:
-                        job.status = JOB_STOPPED
-                        db.commit()
-                        st.success("Stopping signal sent! The scraper will stop after finishing the current page.")
-                        st.rerun()
-                finally:
-                    db.close()
-            
-            # Show extracted data so far
-            db = SessionLocal()
-            try:
-                from modules.database.models import Lead
-                recent_leads = db.query(Lead).filter(Lead.scraping_job_id == running_serp_job.id).order_by(Lead.created_at.desc()).limit(15).all()
-                if recent_leads:
-                    st.markdown("##### 📌 Latest Extracted Leads")
-                    lead_data = []
-                    for l in recent_leads:
-                        raw = l.raw_data or {}
-                        lead_data.append({
-                            "Business": l.business_name,
-                            "Email": l.email or "N/A",
-                            "Phone": l.phone or "N/A",
-                            "Title": raw.get("result_title", ""),
-                            "Page": raw.get("serp_page", "")
-                        })
-                    st.dataframe(pd.DataFrame(lead_data), hide_index=True, width="stretch")
-            finally:
-                db.close()
-                
-            import time
-            time.sleep(3)
-            st.rerun()
-        
-        else:
-            with st.form("email_campaign_form"):
-                st.markdown("##### 🔍 Google SERP Scraper")
-                col1, col2 = st.columns(2)
-                with col1:
-                    campaign_name = st.text_input("Campaign Name", "Email Harvesting v1")
-                    queries_text = st.text_area("Search Queries (One per line)", 
-                                             '"London" Carpenters site:facebook.com\n"London" Plumbers site:facebook.com',
-                                             help="Enter one search query per line. The scraper will process them sequentially.")
-                with col2:
-                    location = st.text_input("Location (optional)", "")
-
-                st.info("💡 **Tip**: Use advanced operators like `site:facebook.com` or `\"@gmail.com\"` to target specific domains or providers.")
-
-                submitted = st.form_submit_button("🚀 Start Scraping", type="primary", use_container_width=True)
-                if submitted:
-                    instruction = parse_manual_input(
-                        campaign_name, PLATFORM_GOOGLE_EMAIL, queries_text, location, 0, ["email", "source_url"],
-                        enable_fallback=False
-                    )
-                    db = SessionLocal()
-                    try:
-                        manager = JobManager(db)
-                        campaign, job = manager.create_campaign_and_job(instruction)
-                        
-                        def run_job(j_id):
-                            thread_db = SessionLocal()
-                            try:
-                                planner = ScrapingPlanner(thread_db)
-                                planner.execute_job(j_id)
-                            finally:
-                                thread_db.close()
-                        
-                        launch_job(run_job, job.id)
-                        
-                        st.success(f"✅ Email Campaign **{campaign.campaign_name}** created and started!")
-                        st.balloons()
-                        import time
-                        time.sleep(1)
-                        st.rerun()
-                    finally:
-                        db.close()
-                        
-            if last_serp_job and last_serp_job.status in ["COMPLETED", "STOPPED", "FAILED"]:
-                st.divider()
-                st.success(f"Previous scraping job ({last_serp_job.status}). Total Saved: {last_serp_job.total_saved}")
-                db = SessionLocal()
-                try:
-                    from modules.database.models import Lead
-                    extracted_leads = db.query(Lead).filter(Lead.scraping_job_id == last_serp_job.id).order_by(Lead.created_at.desc()).all()
-                    if extracted_leads:
-                        st.markdown("##### 📊 Extracted Data")
-                        lead_data = []
-                        for l in extracted_leads:
-                            raw = l.raw_data or {}
-                            lead_data.append({
-                                "Business Name": l.business_name,
-                                "Email": l.email or "",
-                                "Phone": l.phone or "",
-                                "Result Title": raw.get("result_title", ""),
-                                "Result URL": raw.get("result_url", l.google_maps_url or ""),
-                                "Page": raw.get("serp_page", ""),
-                                "Date": raw.get("createdOn", l.created_at.strftime("%Y-%m-%d %H:%M") if l.created_at else "")
-                            })
-                        st.dataframe(pd.DataFrame(lead_data), hide_index=True, width="stretch")
-                finally:
-                    db.close()
-
-    with tab4:
-        db = SessionLocal()
-        running_adv_job = None
-        last_adv_job = None
-        try:
-            from modules.database.models import ScrapingJob
-            from utils.constants import PLATFORM_GOOGLE_SERP, JOB_RUNNING, JOB_PENDING
-            
-            all_adv_jobs = db.query(ScrapingJob).filter(
-                ScrapingJob.platform == PLATFORM_GOOGLE_SERP
-            ).order_by(ScrapingJob.created_at.desc()).all()
-            
-            if all_adv_jobs:
-                last_adv_job = all_adv_jobs[0]
-                if last_adv_job.status in [JOB_RUNNING, JOB_PENDING]:
-                    running_adv_job = last_adv_job
-        finally:
-            db.close()
-
-        if running_adv_job:
-            st.warning(f"⚠️ A Google SERP Search job is currently running for campaign: **{running_adv_job.campaign_id}**")
-            
-            # Show live metrics
-            c1, c2, c3 = st.columns(3)
-            c1.metric("📦 Scraped", running_adv_job.total_scraped)
-            c2.metric("💾 Saved", running_adv_job.total_saved)
-            c3.metric("🔁 Duplicates", running_adv_job.total_duplicates)
-            
-            if st.button("🛑 Stop Advanced Scraping", type="primary", use_container_width=True):
-                db = SessionLocal()
-                try:
-                    from utils.constants import JOB_STOPPED
-                    job = db.query(ScrapingJob).filter(ScrapingJob.id == running_adv_job.id).first()
-                    if job:
-                        job.status = JOB_STOPPED
-                        db.commit()
-                        st.success("Stopping signal sent! The scraper will stop after finishing the current page.")
-                        st.rerun()
-                finally:
-                    db.close()
-            
-            # Show extracted data so far
-            db = SessionLocal()
-            try:
-                from modules.database.models import Lead
-                recent_leads = db.query(Lead).filter(Lead.scraping_job_id == running_adv_job.id).order_by(Lead.created_at.desc()).limit(15).all()
-                if recent_leads:
-                    st.markdown("##### 📌 Latest Extracted Leads")
-                    lead_data = []
-                    for l in recent_leads:
-                        raw = l.raw_data or {}
-                        lead_data.append({
-                            "Business": l.business_name,
-                            "Email": l.email or "N/A",
-                            "Phone": l.phone or "N/A",
-                            "Title": raw.get("result_title", ""),
-                            "Page": raw.get("serp_page", "")
-                        })
-                    st.dataframe(pd.DataFrame(lead_data), hide_index=True, width="stretch")
-            finally:
-                db.close()
-                
-            import time
-            time.sleep(3)
-            st.rerun()
-        
-        else:
-            with st.form("adv_campaign_form"):
-                st.markdown("##### 🔍 Google SERP Search (Manager's Scraper)")
-                col1, col2 = st.columns(2)
-                with col1:
-                    campaign_name = st.text_input("Campaign Name", "Advanced SERP Campaign v1")
-                    queries_text = st.text_area("Search Queries (One per line)", 
-                                             '"London" Carpenters site:facebook.com\n"London" Plumbers site:facebook.com',
-                                             help="Enter one search query per line. The scraper will process them sequentially.", key="adv_queries_text")
-                with col2:
-                    location = st.text_input("Location (optional)", "", key="adv_location")
-
-                submitted = st.form_submit_button("🚀 Start Advanced Scraping", type="primary", use_container_width=True)
-                if submitted:
-                    instruction = parse_manual_input(
-                        campaign_name, PLATFORM_GOOGLE_SERP, queries_text, location, 0, ["email", "source_url"],
-                        enable_fallback=False
-                    )
-                    db = SessionLocal()
-                    try:
-                        manager = JobManager(db)
-                        campaign, job = manager.create_campaign_and_job(instruction)
-                        
-                        def run_adv_job(j_id):
-                            thread_db = SessionLocal()
-                            try:
-                                planner = ScrapingPlanner(thread_db)
-                                planner.execute_job(j_id)
-                            finally:
-                                thread_db.close()
-                        
-                        launch_job(run_adv_job, job.id)
-                        
-                        st.success(f"✅ Advanced SERP Campaign **{campaign.campaign_name}** created and started!")
-                        st.balloons()
-                        import time
-                        time.sleep(1)
-                        st.rerun()
-                    finally:
-                        db.close()
-                        
-            if last_adv_job and last_adv_job.status in ["COMPLETED", "STOPPED", "FAILED"]:
-                st.divider()
-                st.success(f"Previous scraping job ({last_adv_job.status}). Total Saved: {last_adv_job.total_saved}")
-                db = SessionLocal()
-                try:
-                    from modules.database.models import Lead
-                    extracted_leads = db.query(Lead).filter(Lead.scraping_job_id == last_adv_job.id).order_by(Lead.created_at.desc()).all()
-                    if extracted_leads:
-                        st.markdown("##### 📊 Extracted Data")
-                        lead_data = []
-                        for l in extracted_leads:
-                            raw = l.raw_data or {}
-                            lead_data.append({
-                                "Business Name": l.business_name,
-                                "Email": l.email or "",
-                                "Phone": l.phone or "",
-                                "Result Title": raw.get("result_title", ""),
-                                "Result URL": raw.get("result_url", l.google_maps_url or ""),
-                                "Page": raw.get("serp_page", ""),
-                                "Date": raw.get("createdOn", l.created_at.strftime("%Y-%m-%d %H:%M") if l.created_at else "")
-                            })
-                        st.dataframe(pd.DataFrame(lead_data), hide_index=True, width="stretch")
-                finally:
-                    db.close()
 
     with tab3:
-        st.markdown("##### 📂 Upload an Excel file with campaign definitions")
-        uploaded_file = st.file_uploader("Choose Excel File", type=['xlsx', 'xls'])
+        st.markdown("##### 📂 Direct Upload Leads via Excel/CSV")
+        st.info("Upload your existing leads. Required columns (or variations): Name/Business, Email, Phone, Website.")
+        
+        campaign_name = st.text_input("Campaign Name for Upload", "Imported Leads")
+        uploaded_file = st.file_uploader("Choose CSV/Excel File", type=['csv', 'xlsx', 'xls'])
+        
         if uploaded_file is not None:
-            instructions = parse_excel_input(uploaded_file)
-            st.info(f"Found **{len(instructions)}** campaigns in the file.")
-            if st.button("🚀 Create All Campaigns", type="primary"):
-                db = SessionLocal()
-                try:
-                    manager = JobManager(db)
-                    for inst in instructions:
-                        manager.create_campaign_and_job(inst)
-                    st.success("✅ All campaigns created successfully!")
-                    st.balloons()
-                finally:
-                    db.close()
+            try:
+                if uploaded_file.name.endswith('.csv'):
+                    df = pd.read_csv(uploaded_file)
+                else:
+                    df = pd.read_excel(uploaded_file)
+                
+                st.write(f"Preview (Total rows: {len(df)}):")
+                st.dataframe(df.head())
+                
+                if st.button("🚀 Import Leads", type="primary"):
+                    db = SessionLocal()
+                    try:
+                        from modules.input.direct_importer import import_dataframe_to_leads
+                        added_count, dup_count = import_dataframe_to_leads(db, df, campaign_name)
+                        st.success(f"✅ Imported {added_count} new leads! (Skipped {dup_count} duplicates)")
+                        st.balloons()
+                    except Exception as e:
+                        st.error(f"Error importing leads: {str(e)}")
+                    finally:
+                        db.close()
+            except Exception as e:
+                st.error(f"Failed to read file: {e}")
 
     with tab5:
         st.markdown("##### 🚀 Serper.dev Bulk SERP Scraper")
@@ -724,6 +550,47 @@ elif page_clean == "Lead Sources":
                                     thread_db.close()
                             launch_job(run_job, job.id)
                             st.rerun()
+
+                    if job.status in ("RUNNING", "PENDING"):
+                        if st.button("🛑 Stop Job", key=f"stop_{job.id}", type="primary"):
+                            job.status = "STOPPED"
+                            db.commit()
+                            st.success("Stopping signal sent!")
+                            st.rerun()
+
+                    # Part 2: Campaign-wise Leads View/Download
+                    col_view, col_dl, _ = st.columns([1, 1, 2])
+                    
+                    with col_view:
+                        if st.button("👀 View Leads", key=f"view_{job.id}"):
+                            st.session_state["view_job_id"] = job.id
+                            
+                    with col_dl:
+                        from modules.database.models import Lead
+                        leads = db.query(Lead).filter(Lead.scraping_job_id == job.id).all()
+                        if leads:
+                            df = pd.DataFrame([{
+                                "Business Name": l.business_name,
+                                "Email": l.email,
+                                "Phone": l.phone,
+                                "Website": l.website,
+                                "Category": l.category,
+                                "Status": l.status
+                            } for l in leads])
+                            csv = df.to_csv(index=False).encode('utf-8')
+                            st.download_button("📥 Download (CSV)", data=csv, file_name=f"leads_{job.id}.csv", mime="text/csv", key=f"dl_{job.id}")
+
+                    if st.session_state.get("view_job_id") == job.id:
+                        from modules.database.models import Lead
+                        job_leads = db.query(Lead).filter(Lead.scraping_job_id == job.id).all()
+                        if job_leads:
+                            lead_data = [{"Business": l.business_name, "Email": l.email, "Phone": l.phone, "Website": l.website} for l in job_leads]
+                            st.dataframe(pd.DataFrame(lead_data), hide_index=True, width="stretch")
+                            if st.button("Close View", key=f"close_{job.id}"):
+                                st.session_state["view_job_id"] = None
+                                st.rerun()
+                        else:
+                            st.info("No leads found for this job yet.")
     finally:
         db.close()
 
@@ -839,9 +706,10 @@ elif page_clean == "Lead Enrichment":
 
 
 # ═══════════════════════════════════════════════
-#  AI LEAD ANALYSIS
+#  AI LEAD ANALYSIS / Lead Intelligence
 # ═══════════════════════════════════════════════
-elif page_clean == "AI Business Audit":
+# Backwards-compatible routing: accept multiple historical names
+elif page_clean in ("Lead Intelligence", "AI Business Audit", "Lead Intelligence Report Engine"):
     from modules.ui.intelligence_ui import render_analysis_dashboard
     from modules.ui.report_viewer_ui import render_report_viewer
     audit_tab, report_tab = st.tabs(["Analysis Queue", "Reports"])
@@ -867,3 +735,5 @@ elif page_clean == "MailForge":
 elif page_clean == "Settings":
     from modules.ui.settings_ui import render_settings
     render_settings()
+else:
+    st.error(f"No route configured for page: {page_clean}")

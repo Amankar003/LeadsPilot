@@ -6,7 +6,7 @@ import streamlit as st
 from datetime import datetime
 from config.database import SessionLocal
 from modules.database.models import Lead, AnalysisJob, AnalysisReport
-from modules.analysis.job_processor import get_report
+from modules.analysis.job_processor import get_report, queue_analysis_job
 from modules.ui.theme import page_header, empty_state
 
 # ─────────────────────────────────────────────
@@ -96,10 +96,56 @@ def render_report_viewer():
             if job.status == "PENDING":
                 st.warning("⏳ Job is queued. Waiting for an open slot...")
             elif job.status == "RUNNING":
-                st.info("⚙️ Analysis engine is currently auditing the website... (Takes 15-45s)")
-                st.button("🔄 Refresh Status")
+                from datetime import datetime
+                started = job.started_at
+                elapsed = "-"
+                if started:
+                    delta = datetime.utcnow() - started
+                    mins = int(delta.total_seconds() // 60)
+                    secs = int(delta.total_seconds() % 60)
+                    elapsed = f"{mins}m {secs}s"
+
+                st.info(f"⚙️ Analysis engine is currently auditing the website... (Started: {started} • Elapsed: {elapsed})")
+                col1, col2, col3 = st.columns([1,1,1])
+                with col1:
+                    if st.button("🔄 Refresh Status"):
+                        st.rerun()
+                with col2:
+                    if st.button("Mark as Failed"):
+                        try:
+                            job_db = db.query(AnalysisJob).filter(AnalysisJob.id == job.id).first()
+                            job_db.status = "FAILED"
+                            job_db.error_message = "Marked failed by user"
+                            job_db.completed_at = datetime.utcnow()
+                            db.commit()
+                            st.success("Marked job as FAILED")
+                            st.rerun()
+                        except Exception as e:
+                            db.rollback()
+                            st.error(f"Failed to mark job failed: {e}")
+                with col3:
+                    if st.button("Retry Job"):
+                        try:
+                            queued = queue_analysis_job(db, selected_lead_id)
+                            if queued:
+                                st.success("Retry queued")
+                                st.rerun()
+                            else:
+                                st.info("A pending or running job already exists for this lead.")
+                        except Exception as e:
+                            st.error(f"Failed to retry job: {e}")
             elif job.status == "FAILED":
                 st.error(f"❌ Analysis failed: {job.error_message}")
+                if st.button("Retry Job"):
+                    try:
+                        queued = queue_analysis_job(db, selected_lead_id)
+                        if queued:
+                            st.success("Retry queued")
+                            st.rerun()
+                        else:
+                            st.info("A pending or running job already exists for this lead.")
+                    except Exception as e:
+                        st.error(f"Failed to retry job: {e}")
             elif job.status == "COMPLETED" and report:
                 render_report_details(db, lead, report)
             elif job.status == "COMPLETED" and not report:

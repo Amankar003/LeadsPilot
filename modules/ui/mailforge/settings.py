@@ -1,139 +1,160 @@
+"""
+modules/ui/mailforge/settings.py — MailForge Bulk Sending Settings.
+Manages the key-value settings for sending behavior.
+"""
 import streamlit as st
-import pandas as pd
-from modules.mailforge.sender import MailForgeSender
 from config.database import SessionLocal
-from modules.database.models import SenderAccount, MailForgeCampaign
+from modules.mailforge.sender import (
+    get_all_settings, save_setting, DEFAULT_SETTINGS,
+)
+from utils.logging_utils import get_logger
+
+logger = get_logger(__name__)
+
 
 def render_settings():
-    st.markdown("### ⚙️ MailForge Campaigns & Sender settings")
-    st.caption("Manage outreach campaigns, tone alignments, and safely configure SMTP or SendGrid sender credentials.")
-    st.divider()
+    st.markdown("### ⚙️ MailForge Settings")
+    st.caption("Configure the bulk email sending engine's behavior, limits, and safety features.")
 
     db = SessionLocal()
     try:
-        # Campaign Builder
-        st.markdown("#### ➕ Create Outreach Campaign")
-        with st.form("create_mailforge_camp_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                camp_name = st.text_input("Outreach Campaign Name", placeholder="e.g. Q2 SEO Audit Pitch")
-                camp_desc = st.text_area("Campaign Description", placeholder="Pitching full technical SEO audit report.")
-                goal = st.selectbox("CTA Outreach Goal", [
-                    "book a quick review call", "reply to get a custom video report", 
-                    "give feedback on recommendations", "check out free technical audit"
-                ])
-            with col2:
-                tone = st.selectbox("Tone Angle", ["professional", "friendly", "direct", "premium agency", "short and crisp"])
-                email_length = st.selectbox("Length constraint", ["short", "medium", "detailed"])
-                target_service = st.text_input("Service Offered", placeholder="e.g. Website Redesign")
+        current = get_all_settings(db)
 
-            submitted = st.form_submit_button("🚀 Create outreach Campaign", type="primary", use_container_width=True)
+        with st.form("mf_settings_form"):
+            st.markdown("##### 📨 Sending Limits")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                emails_per_day = st.number_input(
+                    "Emails per sender per day",
+                    min_value=1, max_value=500,
+                    value=int(current.get("emails_per_sender_per_day", 40)),
+                    key="mf_s_epd",
+                )
+            with col2:
+                delay = st.number_input(
+                    "Delay between emails (seconds)",
+                    min_value=0, max_value=300,
+                    value=int(current.get("delay_between_emails_seconds", 30)),
+                    key="mf_s_delay",
+                )
+            with col3:
+                batch_size = st.number_input(
+                    "Batch size",
+                    min_value=1, max_value=1000,
+                    value=int(current.get("batch_size", 50)),
+                    key="mf_s_batch",
+                )
+
+            st.markdown("##### 🔁 Retry & Deduplication")
+            col4, col5 = st.columns(2)
+            with col4:
+                retry_failed = st.checkbox(
+                    "Retry failed emails",
+                    value=current.get("retry_failed_emails", "true").lower() == "true",
+                    key="mf_s_retry",
+                )
+                max_retry = st.number_input(
+                    "Max retry count",
+                    min_value=0, max_value=10,
+                    value=int(current.get("max_retry_count", 2)),
+                    key="mf_s_maxretry",
+                )
+            with col5:
+                skip_dup = st.checkbox(
+                    "Skip duplicate recipients",
+                    value=current.get("skip_duplicate_recipients", "true").lower() == "true",
+                    key="mf_s_skipdup",
+                )
+                skip_sup = st.checkbox(
+                    "Skip suppressed emails",
+                    value=current.get("skip_suppressed_emails", "true").lower() == "true",
+                    key="mf_s_skipsup",
+                )
+
+            st.markdown("##### 🛡️ Safety & Circuit Breaker")
+            col6, col7 = st.columns(2)
+            with col6:
+                stop_high_fail = st.checkbox(
+                    "Stop on high failure rate",
+                    value=current.get("stop_on_high_failure_rate", "true").lower() == "true",
+                    key="mf_s_stophigh",
+                )
+                fail_threshold = st.number_input(
+                    "Failure rate threshold (%)",
+                    min_value=5, max_value=100,
+                    value=int(current.get("failure_rate_threshold_percent", 30)),
+                    key="mf_s_failthresh",
+                )
+            with col7:
+                sending_mode = st.selectbox(
+                    "Sending Mode",
+                    options=["dry_run", "live"],
+                    index=0 if current.get("sending_mode", "dry_run") == "dry_run" else 1,
+                    key="mf_s_mode",
+                )
+                rotation = st.selectbox(
+                    "Sender Rotation Strategy",
+                    options=["round_robin", "least_used_today"],
+                    index=0 if current.get("sender_rotation_strategy", "round_robin") == "round_robin" else 1,
+                    key="mf_s_rotation",
+                )
+
+            st.markdown("##### 📡 Default SMTP Configuration")
+            col8, col9, col10 = st.columns(3)
+            with col8:
+                default_host = st.text_input(
+                    "Default SMTP Host",
+                    value=current.get("default_smtp_host", "smtp.gmail.com"),
+                    key="mf_s_host",
+                )
+            with col9:
+                default_port = st.number_input(
+                    "Default SMTP Port",
+                    min_value=25, max_value=65535,
+                    value=int(current.get("default_smtp_port", 587)),
+                    key="mf_s_port",
+                )
+            with col10:
+                use_tls = st.checkbox(
+                    "Use TLS",
+                    value=current.get("use_tls", "true").lower() == "true",
+                    key="mf_s_tls",
+                )
+
+            submitted = st.form_submit_button("💾 Save Settings", type="primary", use_container_width=True)
+
             if submitted:
-                if not camp_name:
-                    st.error("Please provide a campaign name.")
-                else:
-                    from modules.mailforge.service import MailForgeService
-                    service = MailForgeService()
-                    c_id = service.create_campaign(
-                        name=camp_name,
-                        description=camp_desc,
-                        goal=goal,
-                        tone=tone,
-                        email_length=email_length,
-                        target_service=target_service
-                    )
-                    st.success(f"🎉 Created Outreach Campaign **{camp_name}** successfully!")
-                    st.balloons()
-                    st.rerun()
+                settings_to_save = {
+                    "emails_per_sender_per_day": str(emails_per_day),
+                    "delay_between_emails_seconds": str(delay),
+                    "batch_size": str(batch_size),
+                    "retry_failed_emails": str(retry_failed).lower(),
+                    "max_retry_count": str(max_retry),
+                    "skip_duplicate_recipients": str(skip_dup).lower(),
+                    "skip_suppressed_emails": str(skip_sup).lower(),
+                    "stop_on_high_failure_rate": str(stop_high_fail).lower(),
+                    "failure_rate_threshold_percent": str(fail_threshold),
+                    "sending_mode": sending_mode,
+                    "sender_rotation_strategy": rotation,
+                    "default_smtp_host": default_host,
+                    "default_smtp_port": str(default_port),
+                    "use_tls": str(use_tls).lower(),
+                }
+                for key, val in settings_to_save.items():
+                    save_setting(db, key, val)
 
+                st.success("✅ Settings saved successfully!")
+                st.rerun()
+
+        # ── Current Settings Summary ──
         st.divider()
+        st.markdown("##### 📄 Current Configuration")
+        refreshed = get_all_settings(db)
+        summary_data = [{"Setting": k, "Value": v} for k, v in refreshed.items()]
+        st.dataframe(summary_data, hide_index=True, use_container_width=True)
 
-        # Manage Sender Accounts
-        st.markdown("#### 📤 Add Sender Account credentials")
-        
-        with st.form("add_sender_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                email = st.text_input("Sender Email Address", placeholder="sender@yourcompany.com")
-                sender_name = st.text_input("Display Name", placeholder="e.g. Aman Kar")
-                provider = st.selectbox("Provider Engine", ["SMTP", "SendGrid"])
-            with col2:
-                smtp_host = st.text_input("SMTP Host", placeholder="smtp.gmail.com (leave blank for SendGrid)")
-                smtp_port = st.number_input("SMTP Port", min_value=25, max_value=65535, value=587)
-                password = st.text_input("SMTP Password / App Password", type="password", placeholder="Enter SMTP account password")
-                sendgrid_api_key = st.text_input("SendGrid API Key (Environment key reference)", placeholder="SENDGRID_API_KEY (leave blank to read from environment)")
-
-            submitted_sender = st.form_submit_button("➕ Save Sender Account", type="primary", use_container_width=True)
-            if submitted_sender:
-                if not email or "@" not in email:
-                    st.error("Please enter a valid sender email.")
-                else:
-                    # Seed default user
-                    from modules.database.models import get_or_create_default_user
-                    user = get_or_create_default_user(db)
-                    
-                    sender = SenderAccount(
-                        user_id=user.id,
-                        email=email,
-                        sender_email=email,
-                        encrypted_password=password, # in real prod encrypt this
-                        sender_name=sender_name,
-                        smtp_host=smtp_host if provider == "SMTP" else None,
-                        smtp_port=smtp_port if provider == "SMTP" else None,
-                        provider=provider,
-                        smtp_username=email,
-                        sendgrid_api_key_env=sendgrid_api_key if provider == "SendGrid" else None,
-                        daily_limit=100,
-                        is_active=True
-                    )
-                    db.add(sender)
-                    db.commit()
-                    st.success(f"Added sender account **{email}** successfully!")
-                    st.rerun()
-
-        # Display Sender Accounts list
-        st.divider()
-        st.markdown("#### 👥 Configured Sender Accounts")
-        senders = db.query(SenderAccount).all()
-        if not senders:
-            st.info("No sender accounts configured yet.")
-        else:
-            sender_rows = []
-            for s in senders:
-                sender_rows.append({
-                    "Sender Name": s.sender_name or "N/A",
-                    "Email": s.email,
-                    "Provider": s.provider or "SMTP",
-                    "Daily Limit": s.daily_limit,
-                    "Sent Today": s.sent_today,
-                    "Active": "🟢 Yes" if s.is_active else "🔴 No",
-                    "Sender ID": s.id
-                })
-
-            df_senders = pd.DataFrame(sender_rows)
-            st.dataframe(df_senders.drop(columns=["Sender ID"]), use_container_width=True)
-
-            # Test connection / Health Check
-            sender_test_id = st.selectbox("Select sender to test connection", options=[s["Sender ID"] for s in sender_rows], format_func=lambda x: [s["Email"] for s in sender_rows if s["Sender ID"] == x][0])
-            
-            col_t1, col_t2 = st.columns(2)
-            with col_t1:
-                if st.button("🧪 Validate Connection", use_container_width=True):
-                    sender_service = MailForgeSender()
-                    res = sender_service.validate_sender_account(sender_test_id)
-                    if res["success"]:
-                        st.success(f"✅ Connection successful: {res.get('details')}")
-                    else:
-                        st.error(f"❌ Connection failed: {res.get('error')}")
-            
-            with col_t2:
-                if st.button("🗑️ Delete Sender", use_container_width=True):
-                    s_to_del = db.query(SenderAccount).filter(SenderAccount.id == sender_test_id).first()
-                    if s_to_del:
-                        db.delete(s_to_del)
-                        db.commit()
-                        st.warning("Sender deleted.")
-                        st.rerun()
-
+    except Exception as e:
+        logger.error(f"Error in settings: {e}", exc_info=True)
+        st.error(f"⚠️ Error: {e}")
     finally:
         db.close()

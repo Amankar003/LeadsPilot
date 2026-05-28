@@ -213,6 +213,54 @@ def render_analysis_dashboard():
         # Get job statuses
         jobs = db.query(AnalysisJob).filter(AnalysisJob.lead_id.in_([l.id for l in leads])).all()
         job_map = {j.lead_id: j for j in jobs}
+
+        # --- Running jobs panel (controls) ---
+        running_jobs = [j for j in jobs if j.status == "RUNNING"]
+        if running_jobs:
+            st.markdown("### 🔄 Currently Running Analysis Jobs")
+            for rj in running_jobs:
+                try:
+                    lead_obj = db.query(Lead).filter(Lead.id == rj.lead_id).first()
+                    started = rj.started_at
+                    elapsed = "-"
+                    if started:
+                        from datetime import datetime
+                        delta = datetime.utcnow() - started
+                        mins = int(delta.total_seconds() // 60)
+                        secs = int(delta.total_seconds() % 60)
+                        elapsed = f"{mins}m {secs}s"
+
+                    colA, colB, colC, colD = st.columns([3, 1, 1, 1])
+                    with colA:
+                        st.markdown(f"**{lead_obj.business_name if lead_obj else rj.lead_id}** — Started: {started or 'N/A'}")
+                    with colB:
+                        st.markdown(f"**Elapsed:** {elapsed}")
+                    with colC:
+                        if st.button("Mark as Failed", key=f"mark_failed_{rj.id}"):
+                            try:
+                                job_db = db.query(AnalysisJob).filter(AnalysisJob.id == rj.id).first()
+                                job_db.status = "FAILED"
+                                job_db.error_message = "Marked failed by user"
+                                job_db.completed_at = datetime.utcnow()
+                                db.commit()
+                                st.success("Marked job as FAILED")
+                                st.rerun()
+                            except Exception as e:
+                                db.rollback()
+                                st.error(f"Failed to mark job failed: {e}")
+                    with colD:
+                        if st.button("Retry Job", key=f"retry_job_{rj.id}"):
+                            try:
+                                queued = queue_analysis_job(db, rj.lead_id)
+                                if queued:
+                                    st.success("Retry queued")
+                                else:
+                                    st.info("A pending or running job already exists for this lead.")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed to retry job: {e}")
+                except Exception:
+                    continue
         
         # Filters
         st.markdown("##### Filters")
