@@ -5,7 +5,9 @@ from config.settings import (
     DATABASE_URL, GEMINI_API_KEY, SENDGRID_API_KEY, SENDGRID_FROM_EMAIL,
     DEFAULT_EMAIL_DELAY_SECONDS, MAX_EMAILS_PER_RUN, MAX_FOLLOWUPS
 )
-from modules.ui.theme import page_header, empty_state, info_card
+from modules.ui.theme import page_header, empty_state, info_card, make_dataframe_arrow_compatible
+from modules.mailforge.suppression import MailForgeSuppressionService
+import pandas as pd
 
 
 def render_settings():
@@ -57,11 +59,11 @@ def render_settings():
     st.divider()
     st.markdown("##### 🚫 Suppression List")
 
-    from modules.database.models import SuppressionList
+    from modules.database.models import MailForgeSuppressionList
 
     db = SessionLocal()
     try:
-        suppressed = db.query(SuppressionList).all()
+        suppressed = db.query(MailForgeSuppressionList).all()
 
         if suppressed:
             st.markdown(f"**{len(suppressed)}** emails blocked from outreach:")
@@ -73,8 +75,9 @@ def render_settings():
                     "Added": str(s.created_at)[:16],
                     "ID": s.id,
                 })
+            df_sup = make_dataframe_arrow_compatible(pd.DataFrame([{"Email": s["Email"], "Reason": s["Reason"], "Added": s["Added"]} for s in sup_data]))
             sup_df = st.dataframe(
-                [{"Email": s["Email"], "Reason": s["Reason"], "Added": s["Added"]} for s in sup_data],
+                df_sup,
                 hide_index=True, width="stretch"
             )
 
@@ -83,7 +86,7 @@ def render_settings():
             for i, s in enumerate(suppressed[:4]):
                 with cols[i]:
                     if st.button(f"Remove {s.email[:20]}…", key=f"unsup_{s.id}"):
-                        item = db.query(SuppressionList).filter_by(id=s.id).first()
+                        item = db.query(MailForgeSuppressionList).filter_by(id=s.id).first()
                         if item:
                             db.delete(item)
                             db.commit()
@@ -101,16 +104,19 @@ def render_settings():
         with c_btn:
             if st.button("➕ Add", use_container_width=True):
                 if new_email:
-                    from modules.outreach.suppression_service import SuppressionService
-                    sup = SuppressionService(db)
+                    sup = MailForgeSuppressionService()
                     if sup.is_suppressed(new_email):
                         st.warning("Already suppressed.")
                     else:
-                        sup.add_to_suppression(new_email, reason)
+                        sup.add_email(new_email, reason.lower())
                         st.success(f"Added {new_email}")
                         st.rerun()
                 else:
                     st.warning("Enter an email.")
+    except Exception as e:
+        db.rollback()
+        st.error("⚠️ Database connection issue. Please refresh or try again.")
+        st.exception(e)
     finally:
         db.close()
 

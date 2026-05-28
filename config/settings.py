@@ -5,7 +5,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Database settings
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///leadpilot.db")
+_db_url = os.getenv("DATABASE_URL", "sqlite:///leadpilot.db")
+if _db_url.startswith("postgres://"):
+    _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+DATABASE_URL = _db_url
 
 # API Keys
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -14,10 +17,12 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 SERPER_API_KEY = os.getenv("SERPER_API_KEY", "")
 SERP_API_KEY = os.getenv("SERP_API_KEY", "")
 # SMTP Settings for Email Sender
-SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+SMTP_SERVER = os.getenv("SMTP_SERVER", os.getenv("SMTP_HOST", "smtp.gmail.com"))
 SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
-SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_USER = os.getenv("SMTP_USER", os.getenv("SMTP_USERNAME", ""))
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+DEFAULT_SENDER_EMAIL = os.getenv("DEFAULT_SENDER_EMAIL", "")
+DEFAULT_SENDER_NAME = os.getenv("DEFAULT_SENDER_NAME", "")
 
 # App Constants
 APP_NAME = "LeadPilot AI"

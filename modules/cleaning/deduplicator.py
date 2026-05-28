@@ -26,12 +26,13 @@ class Deduplicator:
         if website and self.lead_repo.check_duplicate(website=website):
             return True
             
-        # Check by lead hash (business name + location + phone + website)
+        # Check by lead hash (business name + location + phone + website + email)
         lead_hash = generate_lead_hash(
-            lead_data.get('business_name'),
-            phone,
-            website,
-            lead_data.get('address') # using address as location
+            business_name=lead_data.get('business_name'),
+            phone=phone,
+            website=website,
+            location=lead_data.get('address'), # using address as location
+            email=email
         )
         lead_data['lead_hash'] = lead_hash
         

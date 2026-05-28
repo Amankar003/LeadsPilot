@@ -3,6 +3,7 @@ import pandas as pd
 import threading
 import os
 import time
+from utils.logging_utils import get_logger
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -17,6 +18,9 @@ from modules.jobs.job_manager import JobManager
 from modules.jobs.scraping_planner import ScrapingPlanner
 from utils.constants import PLATFORM_GOOGLE_MAPS, PLATFORM_GOOGLE_EMAIL
 from modules.ui.theme import inject_custom_css, page_header, empty_state, status_badge, workflow_indicator
+from modules.ui.mailforge import render_mailforge
+
+logger = get_logger(__name__)
 
 # ─── Page Config ───
 st.set_page_config(
@@ -32,6 +36,49 @@ def setup_database():
     init_db()
 setup_database()
 
+
+def run_startup_checks():
+    issues = []
+    optional = []
+    if not os.getenv("DATABASE_URL"):
+        optional.append("DATABASE_URL not set, using local SQLite.")
+    if not os.getenv("SERPER_API_KEY"):
+        optional.append("SERPER_API_KEY missing: Serper features will be limited.")
+    if not os.getenv("GROQ_API_KEY") and not os.getenv("GEMINI_API_KEY"):
+        optional.append("No AI provider key configured. Fallback generation only.")
+    if not os.getenv("SENDGRID_API_KEY"):
+        optional.append("SENDGRID_API_KEY missing. SMTP/manual sender required.")
+    for item in issues:
+        st.error(item)
+    for item in optional:
+        st.warning(item)
+
+
+run_startup_checks()
+
+
+def launch_job(target, *args):
+    """
+    Run jobs in background for local mode, inline for worker mode.
+    Set LEADPILOT_WORKER_MODE=true when using external workers.
+    """
+    if os.getenv("LEADPILOT_WORKER_MODE", "false").lower() == "true":
+        target(*args)
+        return None
+    thread = threading.Thread(target=target, args=args, daemon=True)
+    thread.start()
+    return thread
+
+# Start background worker thread safely
+from modules.jobs.worker import BackgroundWorker
+@st.cache_resource
+def start_worker():
+    worker = BackgroundWorker()
+    worker.start()
+    return worker
+start_worker()
+
+
 # ─── Theme ───
 inject_custom_css()
 
@@ -45,21 +92,15 @@ with st.sidebar:
     page = st.radio(
         "Navigation",
         [
-            "📊 Dashboard",
-            "➕ Create Campaign",
-            "⚙️ Scraping Jobs",
-            "🗂️ Leads",
-            "───────────────",
-            "🧠 AI Lead Analysis",
-            "✉️ Email Generator",
-            "📝 Email Drafts",
-            "───────────────",
-            "📤 Send Emails",
-            "📋 Email Logs",
-            "🔁 Follow-ups",
-            "───────────────",
-            "📈 CRM Pipeline",
-            "⚙️ Settings",
+            "Dashboard",
+            "Dork Optimizer",
+            "Campaigns",
+            "Lead Sources",
+            "Lead Enrichment",
+            "AI Business Audit",
+            "CRM",
+            "MailForge",
+            "Settings",
         ],
         label_visibility="collapsed",
     )
@@ -72,14 +113,14 @@ page_clean = page.strip()
 
 # Skip separator items
 if page_clean.startswith("──"):
-    page = "📊 Dashboard"
+    page = "Dashboard"
     page_clean = page.strip()
 
 
 # ═══════════════════════════════════════════════
 #  DASHBOARD
 # ═══════════════════════════════════════════════
-if page_clean == "📊 Dashboard":
+if page_clean == "Dashboard":
     page_header("📊", "Dashboard", "Real-time overview of your lead generation pipeline")
 
     db = SessionLocal()
@@ -88,7 +129,7 @@ if page_clean == "📊 Dashboard":
         jobs = JobRepository(db).get_all()
         leads = LeadRepository(db).get_all()
 
-        from modules.database.models import LeadInsight, EmailDraft, EmailLog
+        from modules.database.models import LeadInsight, MailForgeDraft, MailForgeEmailLog
 
         # Row 1 — Core metrics
         c1, c2, c3, c4 = st.columns(4)
@@ -100,8 +141,8 @@ if page_clean == "📊 Dashboard":
         # Row 2 — AI & Outreach metrics
         c5, c6, c7, c8 = st.columns(4)
         c5.metric("🧠 AI Analyzed", db.query(LeadInsight).count())
-        c6.metric("✉️ Drafts", db.query(EmailDraft).count())
-        c7.metric("📤 Sent", db.query(EmailLog).filter(EmailLog.status == "SENT").count())
+        c6.metric("✉️ Drafts", db.query(MailForgeDraft).count())
+        c7.metric("📤 Sent", db.query(MailForgeEmailLog).filter(MailForgeEmailLog.status == "sent").count())
         c8.metric("🔥 Hot Leads", db.query(LeadInsight).filter(LeadInsight.lead_type == "HOT").count())
 
         # Workflow indicator
@@ -150,7 +191,7 @@ if page_clean == "📊 Dashboard":
 # ═══════════════════════════════════════════════
 #  CREATE CAMPAIGN
 # ═══════════════════════════════════════════════
-elif page_clean == "➕ Create Campaign":
+elif page_clean == "Campaigns":
     page_header("➕", "Create Campaign", "Set up a new lead scraping campaign")
 
     tab1, tab2, tab4, tab3, tab5 = st.tabs(["📍 Scrape via Google Maps", "🔍 Scrape via Google SERP", "🔍 Google SERP Search", "📂 Scrape via Excel/CSV", "🚀 Bulk SERP Scraper (Serper.dev)"])
@@ -243,8 +284,7 @@ elif page_clean == "➕ Create Campaign":
                             finally:
                                 thread_db.close()
                         
-                        thread = threading.Thread(target=run_maps_job, args=(job.id,), daemon=True)
-                        thread.start()
+                        launch_job(run_maps_job, job.id)
                         
                         st.success(f"✅ Maps Campaign **{campaign.campaign_name}** created and started!")
                         st.balloons()
@@ -377,8 +417,7 @@ elif page_clean == "➕ Create Campaign":
                             finally:
                                 thread_db.close()
                         
-                        thread = threading.Thread(target=run_job, args=(job.id,), daemon=True)
-                        thread.start()
+                        launch_job(run_job, job.id)
                         
                         st.success(f"✅ Email Campaign **{campaign.campaign_name}** created and started!")
                         st.balloons()
@@ -510,8 +549,7 @@ elif page_clean == "➕ Create Campaign":
                             finally:
                                 thread_db.close()
                         
-                        thread = threading.Thread(target=run_adv_job, args=(job.id,), daemon=True)
-                        thread.start()
+                        launch_job(run_adv_job, job.id)
                         
                         st.success(f"✅ Advanced SERP Campaign **{campaign.campaign_name}** created and started!")
                         st.balloons()
@@ -610,12 +648,7 @@ elif page_clean == "➕ Create Campaign":
                         finally:
                             thread_db.close()
                     
-                    thread = threading.Thread(
-                        target=run_serper_bulk, 
-                        args=(job.id,),
-                        daemon=True
-                    )
-                    thread.start()
+                    launch_job(run_serper_bulk, job.id)
                     
                     st.success(f"✅ Bulk Scraping Campaign **{campaign.campaign_name}** started!")
                     st.balloons()
@@ -657,7 +690,7 @@ elif page_clean == "➕ Create Campaign":
 # ═══════════════════════════════════════════════
 #  SCRAPING JOBS
 # ═══════════════════════════════════════════════
-elif page_clean == "⚙️ Scraping Jobs":
+elif page_clean == "Lead Sources":
     page_header("⚙️", "Scraping Jobs", "Monitor and control your scraping jobs")
 
     db = SessionLocal()
@@ -689,17 +722,24 @@ elif page_clean == "⚙️ Scraping Jobs":
                                     planner.execute_job(j_id)
                                 finally:
                                     thread_db.close()
-                            thread = threading.Thread(target=run_job, args=(job.id,), daemon=True)
-                            thread.start()
+                            launch_job(run_job, job.id)
                             st.rerun()
     finally:
         db.close()
 
 
 # ═══════════════════════════════════════════════
+#  DORK OPTIMIZER
+# ═══════════════════════════════════════════════
+elif page_clean == "Dork Optimizer":
+    from modules.ui.dork_optimizer_ui import render_dork_optimizer
+    render_dork_optimizer()
+
+
+# ═══════════════════════════════════════════════
 #  LEADS
 # ═══════════════════════════════════════════════
-elif page_clean == "🗂️ Leads":
+elif page_clean == "Lead Enrichment":
     page_header("🗂️", "Lead Database", "Browse, filter, and export your scraped leads")
 
     db = SessionLocal()
@@ -723,6 +763,8 @@ elif page_clean == "🗂️ Leads":
             for l in leads:
                 raw = l.raw_data or {}
                 data.append({
+                    "Select": True,
+                    "Lead ID": l.id,
                     "Name/Business": l.business_name,
                     "Email": l.email or "",
                     "Phone": l.phone or "",
@@ -743,10 +785,48 @@ elif page_clean == "🗂️ Leads":
                 df = df[df['Website'] != ""]
 
             st.markdown(f"##### Showing {len(df)} leads")
-            st.dataframe(df, hide_index=True, use_container_width=True)
+            
+            # Interactive data editor to select leads
+            edited_df = st.data_editor(
+                df,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn(required=True),
+                    "Lead ID": None  # Hide Lead ID column
+                },
+                disabled=["Name/Business", "Email", "Phone", "Website", "Category", "Page", "Result URL", "Created On", "Status"],
+                hide_index=True,
+                use_container_width=True
+            )
+
+            # Lead selection mapping to MailForge
+            selected_leads = edited_df[edited_df["Select"]] if not edited_df.empty else pd.DataFrame()
+            if not selected_leads.empty:
+                st.divider()
+                st.markdown("#### 🚀 Pipeline to MailForge Outreach")
+                from modules.database.models import MailForgeCampaign
+                mf_campaigns = db.query(MailForgeCampaign).order_by(MailForgeCampaign.created_at.desc()).all()
+                if not mf_campaigns:
+                    st.warning("⚠️ No MailForge outreach campaigns found! Please create one in MailForge settings tab first.")
+                else:
+                    camp_opts = {c.id: c.name for c in mf_campaigns}
+                    selected_mf_camp = st.selectbox(
+                        "Target MailForge Campaign",
+                        options=list(camp_opts.keys()),
+                        format_func=lambda x: camp_opts[x],
+                        key="leads_mf_select"
+                    )
+                    
+                    if st.button("👉 Send Selected Leads to MailForge", type="primary", use_container_width=True):
+                        from modules.mailforge.service import MailForgeService
+                        service = MailForgeService()
+                        selected_lead_ids = selected_leads["Lead ID"].tolist()
+                        added = service.send_leads_to_mailforge(selected_mf_camp, selected_lead_ids)
+                        st.success(f"🎉 Successfully sent **{added}** leads to MailForge Outreach Campaign!")
+                        st.balloons()
 
             # Export
-            csv = df.to_csv(index=False).encode('utf-8')
+            csv = df.drop(columns=["Select", "Lead ID"]).to_csv(index=False).encode('utf-8')
+
             st.download_button(
                 "📥 Download CSV",
                 data=csv,
@@ -761,55 +841,29 @@ elif page_clean == "🗂️ Leads":
 # ═══════════════════════════════════════════════
 #  AI LEAD ANALYSIS
 # ═══════════════════════════════════════════════
-elif page_clean == "🧠 AI Lead Analysis":
-    from modules.ui.ai_lead_analysis import render_ai_lead_analysis
-    render_ai_lead_analysis()
+elif page_clean == "AI Business Audit":
+    from modules.ui.intelligence_ui import render_analysis_dashboard
+    from modules.ui.report_viewer_ui import render_report_viewer
+    audit_tab, report_tab = st.tabs(["Analysis Queue", "Reports"])
+    with audit_tab:
+        render_analysis_dashboard()
+    with report_tab:
+        render_report_viewer()
 
 # ═══════════════════════════════════════════════
 #  EMAIL GENERATOR
 # ═══════════════════════════════════════════════
-elif page_clean == "✉️ Email Generator":
-    from modules.ui.email_generator_ui import render_email_generator
-    render_email_generator()
-
-# ═══════════════════════════════════════════════
-#  EMAIL DRAFTS
-# ═══════════════════════════════════════════════
-elif page_clean == "📝 Email Drafts":
-    from modules.ui.email_drafts_ui import render_email_drafts
-    render_email_drafts()
-
-# ═══════════════════════════════════════════════
-#  SEND EMAILS
-# ═══════════════════════════════════════════════
-elif page_clean == "📤 Send Emails":
-    from modules.ui.send_emails_ui import render_send_emails
-    render_send_emails()
-
-# ═══════════════════════════════════════════════
-#  EMAIL LOGS
-# ═══════════════════════════════════════════════
-elif page_clean == "📋 Email Logs":
-    from modules.ui.email_logs_ui import render_email_logs
-    render_email_logs()
-
-# ═══════════════════════════════════════════════
-#  FOLLOW-UPS
-# ═══════════════════════════════════════════════
-elif page_clean == "🔁 Follow-ups":
-    from modules.ui.followups_ui import render_followups
-    render_followups()
-
-# ═══════════════════════════════════════════════
-#  CRM PIPELINE
-# ═══════════════════════════════════════════════
-elif page_clean == "📈 CRM Pipeline":
+elif page_clean == "CRM":
     from modules.ui.crm_ui import render_crm
     render_crm()
+
+elif page_clean == "MailForge":
+    from modules.ui.mailforge import render_mailforge
+    render_mailforge()
 
 # ═══════════════════════════════════════════════
 #  SETTINGS
 # ═══════════════════════════════════════════════
-elif page_clean == "⚙️ Settings":
+elif page_clean == "Settings":
     from modules.ui.settings_ui import render_settings
     render_settings()

@@ -1,11 +1,10 @@
 from playwright.sync_api import sync_playwright
 import time
-from modules.scraping.base_scraper import BaseScraper
 from utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
-class GoogleMapsScraper(BaseScraper):
+class GoogleMapsScraper:
     def scrape(self, query: str, limit: int = None, location: str = None, should_stop=None):
         """
         Scrapes Google Maps for the given query.

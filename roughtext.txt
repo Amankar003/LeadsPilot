@@ -1,0 +1,6 @@
+Serper.dev
+
+Supabase
+
+Groq/Gemini
+

@@ -4,8 +4,8 @@ from config.database import SessionLocal
 from modules.database.repositories import CampaignRepository, LeadRepository, LeadInsightRepository
 from modules.database.models import Lead, LeadInsight, CRMActivity
 from modules.crm.pipeline import CRMService
-from modules.outreach.suppression_service import SuppressionService
-from modules.ui.theme import page_header, empty_state
+from modules.mailforge.suppression import MailForgeSuppressionService
+from modules.ui.theme import page_header, empty_state, status_badge, make_dataframe_arrow_compatible
 
 CRM_STATUSES = [
     "NEW_LEAD", "AI_ANALYZED", "EMAIL_GENERATED", "EMAIL_APPROVED",
@@ -97,7 +97,7 @@ def render_crm():
                     "Status": l.status,
                     "ID": l.id[:12] + "…",
                 })
-            st.dataframe(pd.DataFrame(data), hide_index=True, width="stretch")
+            st.dataframe(make_dataframe_arrow_compatible(pd.DataFrame(data)), hide_index=True, width="stretch")
 
         # ── Manual Status Update ──
         st.divider()
@@ -130,7 +130,7 @@ def render_crm():
                 if lead_id_input:
                     lead = db.query(Lead).filter(Lead.id == lead_id_input).first()
                     if lead and lead.email:
-                        SuppressionService(db).add_to_suppression(lead.email, "MANUAL_BLOCK")
+                        MailForgeSuppressionService().add_email(lead.email, "manual_block", "Suppressed from CRM")
                         CRMService(db).update_lead_status(lead_id_input, lead.campaign_id, "DO_NOT_CONTACT", "Suppressed")
                         st.success(f"🚫 {lead.email} suppressed.")
                         st.rerun()
@@ -152,5 +152,9 @@ def render_crm():
                     st.markdown(f"**{act.activity_type}** — {act.description}  \n`{str(act.created_at)[:16]}`")
             else:
                 st.info("No activities recorded.")
+    except Exception as e:
+        db.rollback()
+        st.error("⚠️ Database connection issue. Please refresh or try again.")
+        st.exception(e)
     finally:
         db.close()

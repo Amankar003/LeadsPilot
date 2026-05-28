@@ -1,4 +1,3 @@
-from modules.scraping.base_scraper import BaseScraper
 import re
 import time
 import random
@@ -6,6 +5,7 @@ import logging
 import urllib.parse
 from datetime import datetime
 from utils.logging_utils import get_logger
+from utils.hash_utils import generate_lead_hash
 from selenium.webdriver.common.by import By
 
 logger = get_logger(__name__)
@@ -29,7 +29,7 @@ BLACKLIST_DOMAINS = {
     "yoursite.com", "domain.com", "google.com"
 }
 
-class GoogleEmailScraper(BaseScraper):
+class GoogleEmailScraper:
     """
     Scraper that harvests leads (emails/phones) from Google Search Results.
     Note: Direct Google SERP scraping is unstable for high-volume production.
@@ -250,7 +250,9 @@ class GoogleEmailScraper(BaseScraper):
                                             "business_name": title, "category": query,
                                             "email": email, "phone": None, "source": "google_email_search",
                                             "google_maps_url": source_url, "email_source": "serp_snippet",
-                                            "email_confidence": "medium", "lead_hash": str(hash(email + query)),
+                                            "email_confidence": "medium", "lead_hash": generate_lead_hash(
+                                                business_name=title, email=email, website=source_url, location=query
+                                            ),
                                             "raw_data": { "name": title, "source_url": source_url, "serp_page": page_idx + 1, "search_term": search_query }
                                         }
                                         yielded_count += 1
@@ -263,7 +265,9 @@ class GoogleEmailScraper(BaseScraper):
                                             "business_name": title, "category": query,
                                             "email": None, "phone": phone, "source": "google_email_search",
                                             "google_maps_url": source_url, "email_source": None,
-                                            "email_confidence": None, "lead_hash": str(hash(phone + query)),
+                                            "email_confidence": None, "lead_hash": generate_lead_hash(
+                                                business_name=title, phone=phone, website=source_url, location=query
+                                            ),
                                             "raw_data": { "name": title, "source_url": source_url, "serp_page": page_idx + 1, "search_term": search_query }
                                         }
                                         yielded_count += 1
@@ -314,7 +318,9 @@ class GoogleEmailScraper(BaseScraper):
                                             "business_name": b_name, "category": query,
                                             "email": email, "phone": None, "source": "google_email_search",
                                             "google_maps_url": target_url, "email_source": "site_visit",
-                                            "email_confidence": "high", "lead_hash": str(hash(email + query)),
+                                            "email_confidence": "high", "lead_hash": generate_lead_hash(
+                                                business_name=b_name, email=email, website=target_url, location=query
+                                            ),
                                             "raw_data": { "name": b_name, "source_url": target_url, "serp_page": page_idx + 1, "search_term": search_query }
                                         }
                                         yielded_count += 1
@@ -326,7 +332,9 @@ class GoogleEmailScraper(BaseScraper):
                                             "business_name": b_name, "category": query,
                                             "email": None, "phone": phone, "source": "google_email_search",
                                             "google_maps_url": target_url, "email_source": None,
-                                            "email_confidence": None, "lead_hash": str(hash(phone + query)),
+                                            "email_confidence": None, "lead_hash": generate_lead_hash(
+                                                business_name=b_name, phone=phone, website=target_url, location=query
+                                            ),
                                             "raw_data": { "name": b_name, "source_url": target_url, "serp_page": page_idx + 1, "search_term": search_query }
                                         }
                                         yielded_count += 1

@@ -116,42 +116,121 @@ def scrape_contact_info(url: str) -> dict:
     return result
 
 def _extract_from_html(html: str, soup: BeautifulSoup, base_url: str) -> dict:
-    """Internal helper to extract patterns from HTML."""
-    # Email regex
+    """Internal helper to extract emails, phones, socials, and WhatsApp links."""
+
+    # -------------------------------
+    # 1. Extract Emails
+    # -------------------------------
     email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     emails = re.findall(email_pattern, html)
-    
-    # Filter common garbage emails
-    emails = [e.lower() for e in emails if not e.endswith(('.png', '.jpg', '.jpeg', '.gif', '.svg'))]
-    
-    # Phone regex (focused on Indian numbers as per context, but reasonably generic)
-    # Supports formats like +91 9876543210, 0120-1234567, etc.
-    phone_pattern = r'(?:\+91|91|0)?[6-9]\d{9}|(?:\d{3,5}-\d{6,8})'
-    phones = re.findall(phone_pattern, html)
-    
-    # Clean phones
-    clean_phones = []
-    for p in phones:
-        p_clean = re.sub(r'\D', '', p)
-        if len(p_clean) >= 10:
-            clean_phones.append(p)
 
-    # Social links
+    # Filter common garbage emails/images
+    emails = [
+        e.lower().strip()
+        for e in emails
+        if not e.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'))
+    ]
+
+    # -------------------------------
+    # 2. Extract Phone Numbers
+    # -------------------------------
+    # Broad international phone regex
+    # Supports:
+    # +91 9876543210
+    # 98765 43210
+    # +1 (555) 123-4567
+    # +44 20 7946 0958
+    # 0120-1234567
+    # +971 50 123 4567
+    # 1800-123-456
+    phone_pattern = r'''
+    (?<![\w])
+    (?:
+        (?:\+|00)?\d{1,4}[\s().-]*
+    )?
+    (?:
+        \(?\d{1,6}\)?[\s().-]*
+    )?
+    \d{2,5}[\s().-]*\d{2,5}[\s().-]*\d{2,6}
+    (?![\w])
+    '''
+
+    raw_phones = re.findall(phone_pattern, html, re.VERBOSE)
+
+    clean_phones = []
+
+    for phone in raw_phones:
+        phone = phone.strip()
+
+        if not phone:
+            continue
+
+        digits = re.sub(r'\D', '', phone)
+
+        # International phone numbers are usually 7 to 15 digits
+        if not (7 <= len(digits) <= 15):
+            continue
+
+        # Remove dummy numbers like 0000000000, 1111111111
+        if len(set(digits)) <= 2:
+            continue
+
+        # Avoid common date/year-like junk
+        if re.fullmatch(r'(19|20)\d{2}', digits):
+            continue
+
+        clean_phones.append(phone)
+
+    # -------------------------------
+    # 3. Extract Social & WhatsApp Links
+    # -------------------------------
     social_links = []
     whatsapp_links = []
-    
+
     for a in soup.find_all('a', href=True):
-        href = a['href'].lower()
-        if any(s in href for s in ['facebook.com', 'instagram.com', 'linkedin.com', 'twitter.com', 'x.com', 'youtube.com']):
-            social_links.append(a['href'])
-        if 'wa.me' in href or 'api.whatsapp.com' in href or 'whatsapp:' in href:
-            whatsapp_links.append(a['href'])
+        href_original = a['href'].strip()
+        href = href_original.lower()
+
+        if any(s in href for s in [
+            'facebook.com',
+            'instagram.com',
+            'linkedin.com',
+            'twitter.com',
+            'x.com',
+            'youtube.com'
+        ]):
+            social_links.append(href_original)
+
+        if (
+            'wa.me' in href
+            or 'api.whatsapp.com' in href
+            or 'web.whatsapp.com' in href
+            or 'whatsapp:' in href
+        ):
+            whatsapp_links.append(href_original)
+
+    # -------------------------------
+    # 4. Extract Phone Numbers from WhatsApp Links
+    # -------------------------------
+    for link in whatsapp_links:
+        digits = re.sub(r'\D', '', link)
+
+        if 7 <= len(digits) <= 15 and len(set(digits)) > 2:
+            clean_phones.append(digits)
+
+    # -------------------------------
+    # 5. Remove Duplicates
+    # -------------------------------
+    emails = list(set(emails))
+    clean_phones = list(set(clean_phones))
+    social_links = list(set(social_links))
+    whatsapp_links = list(set(whatsapp_links))
 
     return {
-        "emails": list(set(emails)),
-        "phones": list(set(clean_phones)),
-        "social_links": list(set(social_links)),
-        "whatsapp_links": list(set(whatsapp_links))
+        "emails": emails,
+        "phones": clean_phones,
+        "social_links": social_links,
+        "whatsapp_links": whatsapp_links
     }
 
 def _find_contact_page(soup: BeautifulSoup, base_url: str) -> str:

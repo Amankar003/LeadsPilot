@@ -298,3 +298,39 @@ def workflow_indicator(steps: list, active_index: int = -1):
         if i < len(steps) - 1:
             html_parts.append('<span class="workflow-arrow">→</span>')
     st.markdown(f'<div style="margin-bottom:20px;">{"".join(html_parts)}</div>', unsafe_allow_html=True)
+
+
+import pandas as pd
+
+def make_dataframe_arrow_compatible(df: pd.DataFrame) -> pd.DataFrame:
+    """Make pandas dataframe compatible with Streamlit Arrow serialization.
+    Preserves boolean columns so that st.data_editor CheckboxColumn works correctly.
+    """
+    if "Page" in df.columns:
+        df["Page"] = pd.to_numeric(df["Page"], errors="coerce").fillna(0).astype(int)
+    
+    # Ensure boolean columns stay as bool (not converted to string)
+    bool_cols = [col for col in df.columns if df[col].dtype == 'bool']
+    
+    for col in df.columns:
+        if col in bool_cols:
+            continue  # Skip boolean columns — they must stay bool for CheckboxColumn
+        if df[col].dtype == 'object':
+            df[col] = df[col].astype(str)
+            
+    return df
+
+def format_lead_data(l):
+    """Formats a Lead model instance into a standardized dictionary for UI tables."""
+    raw = getattr(l, "raw_data", None) or {}
+    return {
+        "Name/Business": l.business_name,
+        "Email": l.email or "",
+        "Phone": l.phone or "",
+        "Website": l.website or "",
+        "Category": l.category,
+        "Page": raw.get("page", raw.get("serp_page", "")),
+        "Result URL": raw.get("link", raw.get("result_url", l.website or l.google_maps_url or "")),
+        "Created On": l.created_at.strftime("%Y-%m-%d %H:%M") if getattr(l, "created_at", None) else "",
+        "Status": l.status,
+    }

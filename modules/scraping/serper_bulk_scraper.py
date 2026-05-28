@@ -43,6 +43,13 @@ def fetch_serper_results(query: str, page: int = 1, num: int = 10) -> List[Dict]
         response.raise_for_status()
         data = response.json()
         
+        if not isinstance(data, dict):
+            logger.warning(f"Unexpected response format from Serper. Expected dict, got {type(data)}")
+            if isinstance(data, list) and data and isinstance(data[0], dict):
+                data = data[0]
+            else:
+                data = {}
+        
         results = []
         organic_results = data.get("organic", [])
         

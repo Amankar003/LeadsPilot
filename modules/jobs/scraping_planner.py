@@ -2,15 +2,23 @@ from sqlalchemy.orm import Session
 from modules.database.repositories import JobRepository, LeadRepository
 from modules.scraping.scraper_factory import get_scraper
 from modules.scraping.google_email_scraper import GoogleEmailScraper
+from modules.scraping.google_maps_scraper import GoogleMapsScraper
 from modules.scraping.website_scraper import WebsiteScraper
 from modules.cleaning.deduplicator import Deduplicator
 from utils.constants import JOB_RUNNING, JOB_COMPLETED, JOB_FAILED, JOB_STOPPED, LEAD_CLEANED, LEAD_STORED
 import datetime
 from utils.logging_utils import get_logger
+from utils.type_utils import safe_float, safe_int
 
 logger = get_logger(__name__)
 
 def is_fake_business_name(name, query=""):
+    """
+    Detect placeholder or garbage business names.
+    NOTE: We do NOT reject names just because they contain the search category.
+    E.g. searching 'Hotels' should NOT skip 'The Grand Hotel'.
+    Only reject if the name is EXACTLY the query or is a known placeholder.
+    """
     if not name:
         return True
 
@@ -30,16 +38,27 @@ def is_fake_business_name(name, query=""):
     if any(keyword in name_lower for keyword in fake_keywords):
         return True
 
-    if query_lower and query_lower in name_lower:
+    # Only reject if the business name is EXACTLY the raw search query
+    # (not just containing it — real businesses often contain their category)
+    if query_lower and name_lower == query_lower:
         return True
 
     return False
 
 def is_invalid_source_url(url):
+    """
+    Reject search engine result URLs but allow Google Maps place URLs
+    and empty URLs (Google Maps leads may only have a maps URL).
+    """
     if not url:
-        return True
+        # Allow empty source URLs — Google Maps leads legitimately may not have one
+        return False
 
     url = url.lower()
+
+    # Allow Google Maps place URLs explicitly
+    if "google.com/maps" in url:
+        return False
 
     invalid_patterns = [
         "google.com/search",
@@ -188,6 +207,17 @@ class ScrapingPlanner:
                 logger.info(f"Skipping lead due to invalid source URL: {source_url}")
                 continue
 
+            # ----------------------------------------------------
+            # Dork Optimizer URL Exclusions Filter
+            # ----------------------------------------------------
+            from modules.dork_optimizer.dork_filters import is_low_quality_dork_url
+            website_url = lead_data.get('website') or lead_data.get('google_maps_url')
+            if website_url and is_low_quality_dork_url(website_url, exclude_directories=True):
+                logger.info(f"Skipping low quality dork URL: {website_url}")
+                job.total_failed += 1
+                self.db.commit()
+                continue
+
             # Website scraping for emails
             email_source = "website"
             email_confidence = "medium"
@@ -217,6 +247,36 @@ class ScrapingPlanner:
                 self.db.commit()
                 continue
                 
+            # ----------------------------------------------------
+            # Dork Optimizer Quality Scoring & Database Linkages
+            # ----------------------------------------------------
+            from modules.dork_optimizer.dork_filters import calculate_lead_quality_score
+            lead_quality_score = calculate_lead_quality_score(lead_data)
+            
+            # Find matching GeneratedDork to link original metadata
+            dork_type = None
+            opportunity_id = None
+            try:
+                from modules.database.models import GeneratedDork as G_Dork
+                d_record = self.db.query(G_Dork).filter(G_Dork.dork == query).first()
+                if d_record:
+                    dork_type = d_record.dork_type
+                    opportunity_id = d_record.opportunity_id
+            except Exception:
+                pass
+                
+            lead_data["raw_data"] = lead_data.get("raw_data") or {}
+            lead_data["raw_data"]["dork_quality_score"] = lead_quality_score
+            lead_data["raw_data"]["original_dork"] = query
+            lead_data["raw_data"]["source"] = "dork_optimizer"
+            if dork_type:
+                lead_data["raw_data"]["dork_type"] = dork_type
+            if opportunity_id:
+                lead_data["raw_data"]["opportunity_id"] = opportunity_id
+                
+            if d_record:
+                lead_data["source"] = "serper_bulk_dork"
+
             # Save lead
             try:
                 self.lead_repo.create(
@@ -236,8 +296,8 @@ class ScrapingPlanner:
                     lead_hash=lead_data.get('lead_hash'),
                     source=lead_data.get('source'),
                     google_maps_url=lead_data.get('google_maps_url'),
-                    rating=lead_data.get('rating'),
-                    reviews_count=lead_data.get('reviews_count'),
+                    rating=safe_float(lead_data.get('rating')),
+                    reviews_count=safe_int(lead_data.get('reviews_count')),
                     raw_data=lead_data.get('raw_data', {})
                 )
                 job.total_saved += 1

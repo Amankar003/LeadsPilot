@@ -1,199 +1,220 @@
 import json
-import re
-import logging
-import time
-import random
-from typing import Dict, Any
+import os
 from modules.ai.ai_client import AIClient
 from modules.ai.prompts import EMAIL_GENERATOR_PROMPT, FOLLOWUP_GENERATOR_PROMPT
 
-# Set up logging
-logger = logging.getLogger(__name__)
-
-def normalize_lead_for_email(lead: dict) -> dict:
-    """
-    Safely maps different possible field names into a clean structure.
-    Also truncates large fields to save tokens.
-    """
-    normalized = {
-        "business_name": (lead.get("business_name") or lead.get("name") or lead.get("title") or lead.get("company") or ""),
-        "category": (lead.get("category") or lead.get("business_category") or lead.get("industry") or lead.get("type") or ""),
-        "location": (lead.get("location") or lead.get("address") or lead.get("city") or ""),
-        "website": (lead.get("website") or lead.get("site") or lead.get("url") or ""),
-        "phone": (lead.get("phone") or lead.get("mobile") or lead.get("contact") or ""),
-        "email": (lead.get("email") or ""),
-        "rating": (lead.get("rating") or lead.get("stars") or ""),
-        "reviews": (lead.get("reviews") or lead.get("review_count") or ""),
-        "description": (lead.get("description") or lead.get("snippet") or lead.get("summary") or ""),
-        "source": (lead.get("source") or lead.get("platform") or ""),
-    }
-    
-    # Truncate description to save tokens
-    if normalized["description"] and len(normalized["description"]) > 300:
-        normalized["description"] = normalized["description"][:300] + "..."
-        
-    # Ensure all values are strings and convert None to empty string
-    for key, value in normalized.items():
-        if value is None:
-            normalized[key] = ""
-        else:
-            normalized[key] = str(value)
-            
-    # Include original data but filtered/cleaned to avoid huge blobs
-    # We remove known large fields that shouldn't go to LLM
-    clean_raw = {}
-    if isinstance(lead, dict):
-        for k, v in lead.items():
-            if k.lower() in ['html', 'page_content', 'raw_html', 'text', 'content']:
-                continue
-            if isinstance(v, str) and len(v) > 500:
-                clean_raw[k] = v[:500] + "..."
-            else:
-                clean_raw[k] = v
-    normalized["raw_data_summary"] = clean_raw
-            
-    return normalized
-
-def lead_to_prompt_json(lead: dict) -> str:
-    """
-    Converts normalized lead to a formatted JSON string for the prompt.
-    """
-    normalized = normalize_lead_for_email(lead)
-    return json.dumps(normalized, indent=2, ensure_ascii=False)
-
-def extract_json_response(text: str) -> dict:
-    """
-    Robust JSON extraction from LLM response.
-    """
-    # Fallback dictionary
-    fallback = {
-        "subject": "Quick idea for your online enquiries",
-        "preview_text": "A simple digital improvement could make customer enquiries easier.",
-        "email_body": "Hi Team,\n\nI came across your business details and noticed there may be an opportunity to make it easier for new customers to discover and contact you online.\n\nAt 3FI Tech, we help businesses build clean websites, enquiry flows, WhatsApp-first contact systems, and simple automation that can improve how customer enquiries are captured and followed up.\n\nWould you be open to a quick suggestion on how this could be improved for your business?\n\nBest regards,\nAman\nAI/ML Engineer\n3FI Tech",
-        "identified_problem": "The available data is limited or AI generation could not be completed.",
-        "proposed_solution": "Improve digital presence and enquiry flow with a website, WhatsApp CTA, or lead capture system.",
-        "personalization_used": "Used fallback template due to limited data or service availability.",
-        "confidence_score": "Low",
-        "email_type": "General Business Outreach"
-    }
-
-    if not text or not isinstance(text, str):
-        return fallback
-        
-    if text == "ERROR_QUOTA_EXHAUSTED":
-        logger.warning("AI quota exceeded. Using fallback email.")
-        fallback["personalization_used"] = "Fallback email used because AI generation was unavailable (Quota Exceeded)."
-        return fallback
-
-    try:
-        # Try direct parsing
-        return json.loads(text)
-    except Exception:
-        try:
-            # Extract first JSON object using regex
-            match = re.search(r'\{.*\}', text, re.DOTALL)
-            if match:
-                return json.loads(match.group())
-        except Exception:
-            logger.warning("JSON parsing failed, using fallback.")
-            
-    return fallback
-
 class EmailGenerator:
+    """
+    Service class wrapping AI email and follow-up generation.
+    Maintains compatibility with tests and UI pages.
+    """
     def __init__(self):
         self.ai = AIClient()
-        self.quota_hit = False
 
-    def generate_draft(self, lead_data: dict, insights: dict = None, service_focus: str = "", sender: dict = None) -> dict:
+    def generate_from_email_only(self, email: str, sender: dict = None) -> dict:
         """
-        Generates a personalized cold outreach email for a business lead.
-        Includes throttling and quota management.
+        Given only an email address, infer business name, website, receiver name, analyze the website for bugs, and generate a custom outreach email.
         """
-        if sender is None:
-            sender = {}
-            
-        business_name = lead_data.get("business_name") or lead_data.get("name") or "Business"
+        import re
+        from modules.analysis.outreach_generator import clean_business_name, infer_category
+        from modules.analysis.ai_report_generator import generate_ai_report
+
+        # 1. Parse domain and guess website
+        match = re.match(r"^[^@]+@([\w.-]+)$", email)
+        domain = match.group(1) if match else None
+        website = f"https://{domain}" if domain else "No website found"
+
+        # 2. Guess business name from domain (strip TLD, dashes, etc.)
+        business_name_guess = domain.split(".")[0].replace("-", " ").title() if domain else "Unknown"
+        business_name = clean_business_name(business_name_guess)
+
+        # 3. Guess receiver name from email prefix (optional, fallback to generic)
+        prefix = email.split("@")[0]
+        receiver_name = prefix.replace(".", " ").replace("_", " ").title()
+        if receiver_name in ["Info", "Contact", "Admin", "Support"]:
+            receiver_name = "Business Owner"
+
+        # 4. Prepare minimal lead data for analysis
+        lead_data = {
+            "business_name": business_name,
+            "website": website,
+            "email": email,
+            "name": receiver_name,
+            "category": infer_category(business_name, None),
+            "location": "Unknown"
+        }
+
+        # 5. Run AI audit/analysis (simulate minimal audit facts for now)
+        # In a real system, you would scrape/analyze the website here. For now, use minimal facts.
+        audit_data = {
+            "business_name": business_name,
+            "website": website,
+            "email": email
+        }
+        pain_points = []  # Could be filled by a real analyzer
+        services = []     # Could be filled by a real recommender
+        ai_report = generate_ai_report(audit_data, pain_points, services)
+
+        # 6. Generate outreach email using the AI report (fallback to draft if error)
+        if "error" not in ai_report:
+            outreach = ai_report.get("outreach", {})
+            return {
+                "subject": outreach.get("email_subject", "Let's Connect"),
+                "email_body": outreach.get("email_body", ""),
+                "business_name": business_name,
+                "receiver_name": receiver_name,
+                "website": website,
+                "ai_report": ai_report
+            }
+        else:
+            # Fallback to generic draft
+            return self.generate_draft(lead_data, sender)
+
+    def generate_draft(self, lead_data: dict, sender: dict = None) -> dict:
+        """
+        Generate email draft from raw lead data. 
+        Highly compatible with scratch/test_fixes.py.
+        """
+        from modules.analysis.outreach_generator import clean_business_name, infer_category
         
-        # If we already hit quota in this run, return fallback immediately
-        if self.quota_hit:
-            logger.info(f"Skipping AI for {business_name} (Quota already hit). Using fallback.")
-            return extract_json_response("ERROR_QUOTA_EXHAUSTED")
+        raw_name = lead_data.get("name", lead_data.get("business_name", "Unknown"))
+        cleaned_name = clean_business_name(raw_name)
+        raw_category = lead_data.get("category", "Unknown")
+        inferred_cat = infer_category(cleaned_name, raw_category)
 
-        logger.info(f"Generating email for: {business_name}")
+        # Formulate lead details matching our standard structure
+        lead_data_dict = {
+            "business_name": cleaned_name,
+            "category": inferred_cat,
+            "location": lead_data.get("location", "Unknown"),
+            "website": lead_data.get("website", "No website found"),
+            "rating": lead_data.get("rating", "N/A"),
+            "reviews": lead_data.get("reviews", "N/A"),
+            "phone": lead_data.get("phone", "N/A"),
+            "email": lead_data.get("email", "N/A")
+        }
 
-        try:
-            # Normalize and convert to JSON for prompt
-            lead_json = lead_to_prompt_json(lead_data)
+        # Fallback Mode is naturally active since no intelligence analysis report is provided directly
+        lead_analysis_text = "[NO LEAD INTELLIGENCE AND ANALYSIS AVAILABLE - FALLBACK OUTREACH MODE IS ACTIVE]\n\n" \
+                             "Since no technical audit or intelligence is available, you must write a safe general outreach email based ONLY on the available RAW LEAD DATA.\n" \
+                             "Do NOT invent any technical problems, poor mobile/SEO experience, or speed issues.\n\n" \
+                             "Use one of the following safe fallback angles depending on the lead category and raw data:\n" \
+                             "- If the website is missing: Pitch a clean, professional website and a seamless online enquiry flow.\n" \
+                             "- If rating/reviews are available (e.g. high rating): Focus on leveraging their existing trust and local reputation to capture even more digital enquiries.\n" \
+                             "- If school/college: Focus on admission enquiry handling, parent communication, and website usability.\n" \
+                             "- If clinic/hospital: Focus on appointment enquiry handling, patient trust, and seamless booking.\n" \
+                             "- If restaurant/cafe: Focus on online bookings, order enquiry flow, and guest experience.\n" \
+                             "- If salon/spa: Focus on appointment booking, local visibility, and repeat customer follow-ups.\n" \
+                             "- If only name/category/location are available: Focus on general digital discoverability and enquiry handling."
+
+        sender_info = sender or {}
+        sender_name = sender_info.get("sender_name", os.getenv("SENDER_NAME", "Deepak Kishor"))
+        sender_role = sender_info.get("sender_role", os.getenv("SENDER_ROLE", "Founder & Lead Strategist"))
+        agency_website = sender_info.get("agency_website", os.getenv("AGENCY_WEBSITE", "3fitech.com"))
+
+        prompt = EMAIL_GENERATOR_PROMPT.format(
+            lead_data=json.dumps(lead_data_dict, indent=2, ensure_ascii=False),
+            lead_analysis=lead_analysis_text,
+            sender_name=sender_name,
+            sender_role=sender_role,
+            agency_website=agency_website
+        )
+
+        result = self.ai.generate_json(prompt)
+        
+        email_body = result.get("email_body", "")
+        def count_words(text):
+            if not text: return 0
+            return len(text.strip().split())
             
-            # Format prompt using the new flexible structure
-            prompt = EMAIL_GENERATOR_PROMPT.format(
-                lead_data=lead_json,
-                sender_name=sender.get("sender_name", "Aman"),
-                sender_role=sender.get("sender_role", "AI/ML Engineer"),
-                agency_website=sender.get("agency_website", "https://3fitech.com")
+        # Retry once if word count is under 90 words or above 180 words
+        word_count = count_words(email_body)
+        if word_count < 90 or word_count > 180:
+            retry_prompt = prompt + "\n\n========================\nSTRICT RE-GENERATION REQUIREMENT\n========================\n" \
+                                    "Rewrite this B2B email to be highly professional and structured, containing exactly 120 to 160 words in 3 distinct paragraphs."
+            retry_result = self.ai.generate_json(retry_prompt)
+            if "error" not in retry_result:
+                result = retry_result
+                email_body = result.get("email_body", "")
+                word_count = count_words(email_body)
+
+        # Smart fallback template if still not within target bounds or failing
+        if "error" in result or word_count < 90:
+            deterministic_body = (
+                f"I came across {lead_data_dict['business_name']} and noticed a couple of areas that could be improved online. Specifically, the current setup could benefit from stronger trust signals, such as visible testimonials, and a clearer enquiry-focused page for people who want to contact or book quickly.\n\n"
+                f"For a local {lead_data_dict['category']} business, these small gaps can make it harder for new visitors to understand your value, trust your service, and reach out immediately.\n\n"
+                f"At 3FI Tech, we specialize in helping local businesses with exactly this — building a conversion-focused landing page, stronger enquiry CTAs, testimonial sections, and WhatsApp integration. Would you be open to a quick 5-minute review next week to see how this could work for {lead_data_dict['business_name']}?"
             )
+            result["email_body"] = deterministic_body
+            email_body = deterministic_body
             
-            # Throttling: random sleep to avoid RPM limits (2-4 seconds)
-            wait_time = random.uniform(2.0, 4.0)
-            time.sleep(wait_time)
+        # Clean whitespace and leading indents from email_body lines
+        if "email_body" in result and result["email_body"]:
+            cleaned_lines = [line.strip() for line in result["email_body"].split("\n")]
+            result["email_body"] = "\n".join(cleaned_lines)
+
+        # Ensure a beautifully structured vertical B2B signature stack is present
+        if "email_body" in result and result["email_body"]:
+            body_text = result["email_body"].strip()
             
-            # Get response from AI
-            raw_response = self.ai.generate_text(prompt)
+            # Clean any trailing partial/inline signatures or company mentions that LLM might have written
+            for term in ["Best regards,", "Best regards", "Best,", "Warm regards,", "Warm regards", "Sincerely,", "Sincerely", "Regards,", "Regards"]:
+                if body_text.endswith(term):
+                    body_text = body_text[:-len(term)].strip()
+                    break
             
-            if raw_response == "ERROR_QUOTA_EXHAUSTED":
-                self.quota_hit = True
-                return extract_json_response(raw_response)
+            # If it generated a messy inline signature line, strip it
+            if "Best regards, " in body_text:
+                idx = body_text.rfind("Best regards, ")
+                body_text = body_text[:idx].strip()
+            elif "Best regards" in body_text:
+                idx = body_text.rfind("Best regards")
+                body_text = body_text[:idx].strip()
                 
-            result = extract_json_response(raw_response)
-            
-            # Map email_body to body/email for backward compatibility
-            if "email_body" in result:
-                result["body"] = result["email_body"]
-                result["email"] = result["email_body"]
-            
-            # Ensure essential keys exist
-            if "subject" not in result: result["subject"] = "Quick Question"
-            if "body" not in result: result["body"] = "Hi,\n\nI noticed your business and thought we could help you grow."
-            
-            logger.info(f"Email generation successful for {business_name}")
-            return result
-            
-        except Exception as e:
-            logger.error(f"Error generating email for {business_name}: {str(e)}")
-            return extract_json_response("")
+            sig_text = f"\n\nBest regards,\n\n{sender_name}\n{sender_role}\n3FI Tech\n{agency_website}"
+            result["email_body"] = body_text + sig_text
+
+        # Ensure subject and other expected keys are filled
+        if "error" in result:
+            return {
+                "error": result.get("error"), 
+                "subject": "Digital Partnership Idea", 
+                "email_body": "Dear Business Owner,\n\nWe would love to help you with Digital Development.\n\nBest,\n3FI Tech Team"
+            }
+
+        return result
 
     def generate_followup(self, lead_data: dict, original_subject: str, original_body: str, followup_number: int) -> dict:
         """
-        Generates a polite follow-up email.
+        Generate follow-up email.
+        Used by legacy and migration utilities.
         """
-        try:
-            prompt = FOLLOWUP_GENERATOR_PROMPT.format(
-                lead_details=json.dumps(lead_data, indent=2),
-                original_subject=original_subject,
-                original_body=original_body,
-                followup_number=followup_number
-            )
-            
-            # Throttling
-            time.sleep(2)
-            
-            raw_response = self.ai.generate_text(prompt)
-            
-            if raw_response == "ERROR_QUOTA_EXHAUSTED":
+        lead_details = {
+            "business_name": lead_data.get("business_name", lead_data.get("name", "Unknown")),
+            "category": lead_data.get("category", "Unknown"),
+            "location": lead_data.get("location", "Unknown"),
+            "website": lead_data.get("website", "No website found")
+        }
+
+        prompt = FOLLOWUP_GENERATOR_PROMPT.format(
+            lead_details=json.dumps(lead_details, indent=2, ensure_ascii=False),
+            original_subject=original_subject,
+            original_body=original_body,
+            followup_number=followup_number
+        )
+
+        result = self.ai.generate_json(prompt)
+        if "error" in result:
+            # Fallback
+            if followup_number == 1:
                 return {
                     "subject": f"Re: {original_subject}",
-                    "body": "Hi, just floating this to the top of your inbox. Let me know if you have any questions.\n\nIf this is not relevant, you can reply 'unsubscribe' and I won't follow up."
+                    "body": f"Hi,\n\nI wanted to follow up on my previous email regarding some digital improvement ideas for {lead_details['business_name']}. I know you're busy, but I'd love to share 2-3 specific ways you can increase your enquiries.\n\nWould you be open to a quick 5-minute chat next week?\n\nBest regards,\n{os.getenv('SENDER_NAME', 'Aman Kar')}"
                 }
-                
-            response = extract_json_response(raw_response)
-            
-            if "error" in response or "subject" not in response:
-                raise ValueError("Invalid AI response")
-                
-            return response
-        except Exception as e:
-            logger.warning(f"Follow-up generation failed: {str(e)}")
-            return {
-                "subject": f"Re: {original_subject}",
-                "body": "Hi, just floating this to the top of your inbox. Let me know if you have any questions.\n\nIf this is not relevant, you can reply 'unsubscribe' and I won't follow up."
-            }
+            else:
+                return {
+                    "subject": f"Re: {original_subject}",
+                    "body": f"Hi,\n\nJust sending a quick final follow-up. If you're not the right person or if this isn't a priority for {lead_details['business_name']} right now, no worries at all.\n\nBest,\n{os.getenv('SENDER_NAME', 'Aman Kar')}"
+                }
+
+        return result
