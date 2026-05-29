@@ -2,11 +2,9 @@ import streamlit as st
 import os
 from config.database import SessionLocal
 from config.settings import (
-    DATABASE_URL, GROQ_API_KEY, GROQ_MODEL,
-    DEFAULT_EMAIL_DELAY_SECONDS, MAX_EMAILS_PER_RUN, MAX_FOLLOWUPS
+    DATABASE_URL, GROQ_API_KEY, GROQ_MODEL
 )
 from modules.ui.theme import page_header, empty_state, info_card, make_dataframe_arrow_compatible
-from modules.mailforge.suppression import MailForgeSuppressionService
 import pandas as pd
 
 
@@ -42,7 +40,7 @@ def render_settings():
             st.error("❌ Groq AI")
 
     with c3:
-        st.success("✅ MailForge SMTP")
+        st.empty()
 
     with c4:
         st.empty()
@@ -55,73 +53,9 @@ def render_settings():
         info_card("Database", f"`{DATABASE_URL[:35]}…`")
         info_card("Groq Model", f"`{GROQ_MODEL}`")
     with c2:
-        info_card("Email Delay", f"{DEFAULT_EMAIL_DELAY_SECONDS} seconds between emails")
-        info_card("Limits", f"Max {MAX_EMAILS_PER_RUN} emails/run • Max {MAX_FOLLOWUPS} follow-ups/lead")
+        info_card("Export Format", "CSV (receiverid, subject, body)")
+        info_card("Email Sending", "Handled externally via CSV export")
 
-    # ── Suppression List ──
-    st.divider()
-    st.markdown("##### 🚫 Suppression List")
-
-    from modules.database.models import MailForgeSuppressionList
-
-    db = SessionLocal()
-    try:
-        suppressed = db.query(MailForgeSuppressionList).all()
-
-        if suppressed:
-            st.markdown(f"**{len(suppressed)}** emails blocked from outreach:")
-            sup_data = []
-            for s in suppressed:
-                sup_data.append({
-                    "Email": s.email,
-                    "Reason": s.reason,
-                    "Added": str(s.created_at)[:16],
-                    "ID": s.id,
-                })
-            df_sup = make_dataframe_arrow_compatible(pd.DataFrame([{"Email": s["Email"], "Reason": s["Reason"], "Added": s["Added"]} for s in sup_data]))
-            sup_df = st.dataframe(
-                df_sup,
-                hide_index=True, width="stretch"
-            )
-
-            # Remove buttons
-            cols = st.columns(min(len(suppressed), 4))
-            for i, s in enumerate(suppressed[:4]):
-                with cols[i]:
-                    if st.button(f"Remove {s.email[:20]}…", key=f"unsup_{s.id}"):
-                        item = db.query(MailForgeSuppressionList).filter_by(id=s.id).first()
-                        if item:
-                            db.delete(item)
-                            db.commit()
-                        st.rerun()
-        else:
-            empty_state("🚫", "Suppression List Empty", "No emails are blocked. Blocked emails will appear here.")
-
-        # Add to suppression
-        st.markdown("")
-        c_email, c_reason, c_btn = st.columns([3, 2, 1])
-        with c_email:
-            new_email = st.text_input("Email address", key="new_sup_email", placeholder="email@example.com", label_visibility="collapsed")
-        with c_reason:
-            reason = st.selectbox("Reason", ["UNSUBSCRIBED", "BOUNCED", "MANUAL_BLOCK"], key="sup_reason", label_visibility="collapsed")
-        with c_btn:
-            if st.button("➕ Add", use_container_width=True):
-                if new_email:
-                    sup = MailForgeSuppressionService()
-                    if sup.is_suppressed(new_email):
-                        st.warning("Already suppressed.")
-                    else:
-                        sup.add_email(new_email, reason.lower())
-                        st.success(f"Added {new_email}")
-                        st.rerun()
-                else:
-                    st.warning("Enter an email.")
-    except Exception as e:
-        db.rollback()
-        st.error("⚠️ Database connection issue. Please refresh or try again.")
-        st.exception(e)
-    finally:
-        db.close()
 
     # ── Setup Guide ──
     st.divider()
@@ -137,7 +71,7 @@ GROQ_API_KEY=your_groq_api_key_here
 GROQ_MODEL=llama-3.3-70b-versatile
 
 # Email Settings
-# Set up SMTP Sender Accounts via the MailForge Sender Accounts UI instead of .env
+# Email sending is handled externally using downloaded CSVs.
 
 # Safety Limits
 DEFAULT_EMAIL_DELAY_SECONDS=30
@@ -150,11 +84,7 @@ Then restart the Streamlit app: `streamlit run app.py`
 
     with st.expander("Safety best practices"):
         st.markdown("""
-- ✅ Always review AI-generated drafts before approving
-- ✅ Keep email delay at 30+ seconds to avoid rate limits
-- ✅ Send max 20-50 emails per day
-- ✅ Respect unsubscribe requests immediately
-- ✅ Use the suppression list for bounced/unsubscribed emails
+- ✅ Always review AI-generated drafts before exporting
+- ✅ Use the CSV export to send campaigns through your preferred external provider
 - ❌ Never mass-send without reviewing drafts
-- ❌ Never ignore bounce/spam reports
         """)

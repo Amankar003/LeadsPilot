@@ -308,7 +308,7 @@ def render_analysis_dashboard():
                 "Website": l.website or "",
                 "Category": l.category or "",
                 "Status": status,
-                "CRM State": l.status
+                "Lead Status": l.status
             })
             
         if select_top_30:
@@ -340,7 +340,7 @@ def render_analysis_dashboard():
                 "Select": st.column_config.CheckboxColumn("Select for Analysis", default=False),
                 "Lead ID": st.column_config.TextColumn("Lead ID", disabled=True),
             },
-            disabled=["Business Name", "Email", "Phone", "Website", "Category", "Status", "CRM State"],
+            disabled=["Business Name", "Email", "Phone", "Website", "Category", "Status", "Lead Status"],
             key="intel_editor"
         )
         
@@ -371,7 +371,103 @@ def render_analysis_dashboard():
                 if "intel_editor" in st.session_state:
                     del st.session_state["intel_editor"]
                 st.rerun()
+
+        st.markdown("---")
+        st.markdown("### 2. Bulk Generated Email Export")
+        st.write("Select leads above, then generate and download their outreach emails as a CSV.")
+
+        col_ex1, col_ex2 = st.columns([1, 1])
+        with col_ex1:
+            if st.button("✉️ Generate Emails for Selected Leads", type="primary", use_container_width=True):
+                if not selected_ids_for_analysis:
+                    st.warning("Please select leads to generate emails for.")
+                else:
+                    from modules.analysis.outreach_generator import generate_outreach
+                    from modules.database.repositories import OutreachMessageRepository
+                    from modules.analysis.job_processor import get_report
+                    repo = OutreachMessageRepository(db)
+                    
+                    with st.spinner("Generating missing emails for selected leads..."):
+                        generated_count = 0
+                        for lid in selected_ids_for_analysis:
+                            # Check if already exists
+                            latest = repo.get_latest_for_lead(lid)
+                            if not latest:
+                                lead_obj = db.query(Lead).filter(Lead.id == lid).first()
+                                report = get_report(db, lid)
+                                if report and report.ai_report_json:
+                                    try:
+                                        res = generate_outreach(report, lead_obj, "Cold Outreach", "Professional", "Short", "Get Reply", "Auto (from report)")
+                                        if "error" not in res:
+                                            repo.create(
+                                                lead_id=lid,
+                                                report_id=report.id,
+                                                email_type="Cold Outreach",
+                                                tone="Professional",
+                                                length="Short",
+                                                cta_goal="Get Reply",
+                                                service_focus="Auto (from report)",
+                                                subject_lines=res.get("subject_lines", []),
+                                                email_body=res.get("email_body", ""),
+                                            )
+                                            generated_count += 1
+                                    except Exception as e:
+                                        logger.error(f"Error generating email for lead {lid}: {e}")
+                        
+                        st.success(f"Generation complete! Generated {generated_count} new emails.")
+                        # Force refresh of session state to load newly generated emails below
+                        st.session_state["force_export_refresh"] = True
+                        st.rerun()
+
+        with col_ex2:
+            st.caption("After generating, preview and download your CSV below.")
+
+        # Display preview and download button
+        if selected_ids_for_analysis:
+            from modules.database.repositories import OutreachMessageRepository
+            repo = OutreachMessageRepository(db)
+            export_data = []
+            
+            for lid in selected_ids_for_analysis:
+                lead_obj = db.query(Lead).filter(Lead.id == lid).first()
+                latest = repo.get_latest_for_lead(lid)
+                if latest and lead_obj:
+                    # Use primary subject
+                    subj = latest.subject_lines[0] if latest.subject_lines else ""
+                    export_data.append({
+                        "email": lead_obj.email or "",
+                        "subject": subj,
+                        "body": latest.email_body or ""
+                    })
+
+            if export_data:
+                from modules.export.email_csv_exporter import EmailCSVExporter
+                exporter = EmailCSVExporter()
+                rows = exporter.build_rows(export_data)
+                df_export = exporter.export_dataframe(rows)
                 
+                st.markdown("#### Preview")
+                st.dataframe(df_export, height=200, use_container_width=True)
+                
+                csv_bytes = exporter.to_csv_bytes(df_export)
+                import datetime
+                date_str = datetime.datetime.now().strftime("%Y%m%d")
+                
+                # Fetch campaign name to be included in filename
+                camp_name = db.query(Campaign).filter(Campaign.id == selected_camp_id).first().campaign_name
+                safe_camp_name = "".join([c for c in camp_name if c.isalpha() or c.isdigit() or c==' ']).rstrip().replace(" ", "_")
+                
+                st.download_button(
+                    label="📥 Download CSV",
+                    data=csv_bytes,
+                    file_name=f"leadpilot_generated_emails_{safe_camp_name}_{date_str}.csv",
+                    mime="text/csv",
+                    type="primary"
+                )
+            else:
+                st.info("No generated emails found for the selected leads. Click 'Generate Emails' first.")
+                
+
     except Exception as e:
         db.rollback()
         logger.error(f"Error in render_analysis_dashboard: {e}", exc_info=True)

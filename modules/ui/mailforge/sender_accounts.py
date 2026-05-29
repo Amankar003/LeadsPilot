@@ -52,10 +52,47 @@ def render_sender_accounts():
             uploaded = st.file_uploader("Choose CSV/Excel", type=["csv", "xlsx", "xls"], key="mf_sender_upload")
             if uploaded:
                 try:
-                    if uploaded.name.endswith(".csv"):
+                    if uploaded.name.endswith('.csv'):
                         df = pd.read_csv(uploaded)
                     else:
                         df = pd.read_excel(uploaded)
+
+                    # Normalize column names safely
+                    df.columns = [str(col).strip().lower().replace(' ', '_') for col in df.columns]
+                    # Alias mapping for common variations
+                    alias_map = {
+                        'email': 'sender_email',
+                        'sender_email': 'sender_email',
+                        'sender email': 'sender_email',
+                        'smtp email': 'sender_email',
+                        'pass': 'password',
+                        'password': 'password',
+                        'app_password': 'password',
+                        'app password': 'password',
+                        'name': 'sender_name',
+                        'sender_name': 'sender_name',
+                        'sender name': 'sender_name',
+                        'host': 'smtp_host',
+                        'smtp_host': 'smtp_host',
+                        'smtp host': 'smtp_host',
+                        'port': 'smtp_port',
+                        'smtp_port': 'smtp_port',
+                        'smtp port': 'smtp_port',
+                        'username': 'smtp_username',
+                        'smtp_username': 'smtp_username',
+                        'smtp username': 'smtp_username',
+                    }
+                    # Apply aliases
+                    df = df.rename(columns=lambda c: alias_map.get(c, c))
+
+                    # Validate required columns
+                    required = ['sender_email', 'password']
+                    missing = [col for col in required if col not in df.columns]
+                    if missing:
+                        st.error(f"Missing required columns: {', '.join(missing)}. Please make sure your first row contains column headers.")
+                        st.stop()
+
+                    st.caption(f"Detected columns after normalization: {', '.join(df.columns)}")
 
                     st.write(f"Found **{len(df)}** accounts.")
                     # Show preview WITHOUT passwords

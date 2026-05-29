@@ -296,7 +296,6 @@ def _render_outreach_tab(db, lead: Lead, report: AnalysisReport, ai_data: dict):
         return
 
     from modules.database.repositories import OutreachMessageRepository
-    from modules.database.models import MailForgeCampaign, MailForgeDraft
     from modules.analysis.outreach_generator import generate_outreach
 
     # Load latest outreach from DB if present
@@ -347,37 +346,6 @@ def _render_outreach_tab(db, lead: Lead, report: AnalysisReport, ai_data: dict):
                         follow_up_2=result.get("follow_up_2", ""),
                     )
 
-                    # Save into MailForge drafts
-                    mf_campaign = db.query(MailForgeCampaign).filter(
-                        MailForgeCampaign.campaign_id == lead.campaign_id
-                    ).first()
-                    if not mf_campaign:
-                        mf_campaign = MailForgeCampaign(
-                            name=f"MailForge {lead.campaign_id[:8]}",
-                            campaign_id=lead.campaign_id,
-                            description="Auto-created from Intelligence report viewer",
-                            tone="professional",
-                            email_length="medium",
-                            status="active",
-                        )
-                        db.add(mf_campaign)
-                        db.flush()
-                    existing_draft = db.query(MailForgeDraft).filter(
-                        MailForgeDraft.lead_id == lead.id,
-                        MailForgeDraft.mailforge_campaign_id == mf_campaign.id,
-                    ).first()
-                    if not existing_draft:
-                        db.add(MailForgeDraft(
-                            lead_id=lead.id,
-                            mailforge_campaign_id=mf_campaign.id,
-                            subject=result.get("subject_lines", ["Ideas for " + lead.business_name])[0],
-                            body=result.get("email_body", ""),
-                            opening_line=result.get("preview_text", ai_data.get("main_pitch_angle", "")),
-                            personalization_reason=result.get("personalization_used", "Website Audit + AI"),
-                            confidence_score=str(result.get("confidence_score", "0.7")),
-                            status="draft",
-                        ))
-                        db.commit()
                     st.success("✅ Outreach generated and saved automatically!")
                     st.rerun()
                 else:
@@ -461,7 +429,6 @@ def _render_outreach_tab(db, lead: Lead, report: AnalysisReport, ai_data: dict):
         if st.button("🔄 Regenerate Email", use_container_width=True, key=f"regen_{lead.id}"):
             from modules.analysis.outreach_generator import generate_outreach
             from modules.database.repositories import OutreachMessageRepository
-            from modules.database.models import MailForgeCampaign, MailForgeDraft
             with st.spinner("Regenerating..."):
                 new_result = generate_outreach(
                     report=report,
@@ -492,41 +459,6 @@ def _render_outreach_tab(db, lead: Lead, report: AnalysisReport, ai_data: dict):
                 )
                 new_result["_db_id"] = new_msg.id
                 
-                mf_campaign = db.query(MailForgeCampaign).filter(
-                    MailForgeCampaign.campaign_id == lead.campaign_id
-                ).first()
-                if not mf_campaign:
-                    mf_campaign = MailForgeCampaign(
-                        name=f"MailForge {lead.campaign_id[:8]}",
-                        campaign_id=lead.campaign_id,
-                        description="Auto-created from Intelligence report viewer",
-                        tone="professional",
-                        email_length="medium",
-                        status="active",
-                    )
-                    db.add(mf_campaign)
-                    db.flush()
-                existing_draft = db.query(MailForgeDraft).filter(
-                    MailForgeDraft.lead_id == lead.id,
-                    MailForgeDraft.mailforge_campaign_id == mf_campaign.id,
-                ).first()
-                if existing_draft:
-                    existing_draft.subject = new_result.get("subject_lines", ["Ideas"])[0]
-                    existing_draft.body = new_result.get("email_body", "")
-                    existing_draft.status = "edited"
-                else:
-                    db.add(MailForgeDraft(
-                        lead_id=lead.id,
-                        mailforge_campaign_id=mf_campaign.id,
-                        subject=new_result.get("subject_lines", ["Ideas"])[0],
-                        body=new_result.get("email_body", ""),
-                        opening_line=new_result.get("preview_text", ""),
-                        personalization_reason=new_result.get("personalization_used", "Website Audit + AI"),
-                        confidence_score=str(new_result.get("confidence_score", "0.7")),
-                        status="draft",
-                    ))
-                db.commit()
-                
                 st.session_state[f"outreach_result_{lead.id}"] = new_result
                 st.success("✅ Email regenerated and saved to database successfully!")
                 st.rerun()
@@ -535,49 +467,13 @@ def _render_outreach_tab(db, lead: Lead, report: AnalysisReport, ai_data: dict):
 
     with btn_approve:
         if st.button(
-            "✅ Approve & Save to CRM",
+            "✅ Approve & Save",
             type="primary",
             use_container_width=True,
             key=f"approve_{lead.id}",
         ):
             from modules.database.repositories import OutreachMessageRepository, LeadRepository
-            from modules.database.models import MailForgeCampaign, MailForgeDraft
             try:
-                mf_campaign = db.query(MailForgeCampaign).filter(
-                    MailForgeCampaign.campaign_id == lead.campaign_id
-                ).first()
-                if not mf_campaign:
-                    mf_campaign = MailForgeCampaign(
-                        name=f"MailForge {lead.campaign_id[:8]}",
-                        campaign_id=lead.campaign_id,
-                        description="Auto-created from Intelligence report viewer",
-                        tone="professional",
-                        email_length="medium",
-                        status="active",
-                    )
-                    db.add(mf_campaign)
-                    db.flush()
-                existing = db.query(MailForgeDraft).filter(
-                    MailForgeDraft.lead_id == lead.id,
-                    MailForgeDraft.mailforge_campaign_id == mf_campaign.id,
-                ).first()
-                if not existing:
-                    db.add(MailForgeDraft(
-                        lead_id=lead.id,
-                        mailforge_campaign_id=mf_campaign.id,
-                        subject=selected_subject,
-                        body=edited_body,
-                        opening_line=result.get("preview_text", ai_data.get("main_pitch_angle", "")),
-                        personalization_reason=result.get("personalization_used", "Website Audit + AI"),
-                        confidence_score=str(result.get("confidence_score", "0.7")),
-                        status="approved",
-                    ))
-                else:
-                    existing.subject = selected_subject
-                    existing.body = edited_body
-                    existing.status = "approved"
-                db.commit()
-
                 # Mark outreach as approved
                 db_id = result.get("_db_id")
                 if db_id:
@@ -596,7 +492,7 @@ def _render_outreach_tab(db, lead: Lead, report: AnalysisReport, ai_data: dict):
 
                 # Update lead status
                 LeadRepository(db).update_status(lead.id, "EMAIL_GENERATED")
-                st.success("✅ Email approved and saved to MailForge Drafts!")
+                st.success("✅ Email approved and saved!")
                 st.rerun()
             except Exception as e:
                 st.error(f"Failed to save: {e}")

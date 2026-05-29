@@ -11,6 +11,24 @@ import os
 import smtplib
 import time
 from datetime import datetime, date
+
+def safe_date(value):
+    """Convert various date representations to a date object safely. Returns None if conversion fails."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+        except Exception:
+            return None
+    return None
+
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -111,7 +129,7 @@ class MailForgeBulkSender:
             self.db.query(MailForgeDraft)
             .filter(
                 MailForgeDraft.mailforge_campaign_id == campaign_id,
-                MailForgeDraft.status == "approved",
+                MailForgeDraft.status.in_(["approved", "ready"]),
             )
             .all()
         )
@@ -126,7 +144,7 @@ class MailForgeBulkSender:
         )
         # Reset daily counters if the day has changed
         for acc in accounts:
-            if acc.last_reset_date is None or acc.last_reset_date.date() < today:
+            if acc.last_reset_date is None or safe_date(acc.last_reset_date) < today:
                 acc.sent_today = 0
                 acc.last_reset_date = datetime.utcnow()
         self.db.commit()
@@ -199,6 +217,8 @@ class MailForgeBulkSender:
         if not accounts:
             return {"total": 0, "sent": 0, "failed": 0, "skipped": 0, "error": "No active sender accounts."}
 
+        # Debug logging
+        logger.debug(f"Sending selected drafts IDs: {draft_ids}")
         drafts = (
             self.db.query(MailForgeDraft)
             .filter(
@@ -334,6 +354,8 @@ class MailForgeBulkSender:
             if password and password in error_msg:
                 error_msg = error_msg.replace(password, "***")
             logger.error(f"SMTP send failed for {recipient}: {error_msg}")
+            # Update draft status to failed
+            draft.status = "failed"
             self._log_attempt(draft, sender, "failed", error=error_msg)
             self.db.commit()
             return {"success": False, "error": error_msg}

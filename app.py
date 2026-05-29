@@ -18,7 +18,6 @@ from modules.jobs.job_manager import JobManager
 from modules.jobs.scraping_planner import ScrapingPlanner
 from utils.constants import PLATFORM_GOOGLE_MAPS, PLATFORM_GOOGLE_EMAIL
 from modules.ui.theme import inject_custom_css, page_header, empty_state, status_badge, workflow_indicator
-from modules.ui.mailforge import render_mailforge
 
 logger = get_logger(__name__)
 
@@ -139,8 +138,6 @@ with st.sidebar:
             "Lead Sources",
             "Lead Enrichment",
             "Lead Intelligence",
-            "CRM",
-            "MailForge",
             "Settings",
         ],
         label_visibility="collapsed",
@@ -205,7 +202,7 @@ if page_clean == "Dashboard":
         jobs = JobRepository(db).get_all()
         leads = LeadRepository(db).get_all()
 
-        from modules.database.models import LeadInsight, MailForgeDraft, MailForgeEmailLog
+        from modules.database.models import LeadInsight
 
         # Row 1 — Core metrics
         c1, c2, c3, c4 = st.columns(4)
@@ -217,33 +214,25 @@ if page_clean == "Dashboard":
         # Row 2 — AI & Outreach metrics
         c5, c6, c7, c8 = st.columns(4)
         c5.metric("🧠 AI Analyzed", db.query(LeadInsight).count())
-        c6.metric("✉️ Drafts", db.query(MailForgeDraft).count())
-        c7.metric("📤 Sent", db.query(MailForgeEmailLog).filter(MailForgeEmailLog.status == "sent").count())
-        c8.metric("🔥 Hot Leads", db.query(LeadInsight).filter(LeadInsight.lead_type == "HOT").count())
+        c6.metric("✉️ Emails Generated", db.query(LeadInsight).filter(LeadInsight.lead_type.isnot(None)).count())
+        c7.metric("🔥 Hot Leads", db.query(LeadInsight).filter(LeadInsight.lead_type == "HOT").count())
+        c8.metric("📥 Export Ready", db.query(LeadInsight).filter(LeadInsight.lead_type.isnot(None)).count())
 
         # Workflow indicator
         st.divider()
         st.markdown("##### Pipeline Workflow")
         workflow_indicator(
-            ["Scrape", "Clean", "AI Analyze", "Generate Email", "Review Draft", "Send", "Follow-up", "CRM"],
+            ["Scrape", "Clean", "AI Analyze", "Generate Email", "Review Draft", "Export CSV"],
             active_index=-1
         )
 
-        # Recent campaigns table
+        # Campaign automation cards
         if campaigns:
             st.divider()
-            st.markdown("##### Recent Campaigns")
-            camp_data = []
-            for c in campaigns[:5]:
-                camp_data.append({
-                    "Campaign": c.campaign_name,
-                    "Category": c.category,
-                    "Location": c.location,
-                    "Limit": c.limit,
-                    "Status": c.status,
-                    "Created": str(c.created_at)[:16],
-                })
-            st.dataframe(pd.DataFrame(camp_data), hide_index=True, width="stretch")
+            st.markdown("## 🎯 Active Campaigns")
+            from modules.ui.campaign_card import render_campaign_card
+            for c in campaigns:
+                render_campaign_card(c)
 
         # Recent jobs status
         if jobs:
@@ -682,31 +671,7 @@ elif page_clean == "Lead Enrichment":
                 use_container_width=True
             )
 
-            # Lead selection mapping to MailForge
             selected_leads = edited_df[edited_df["Select"]] if not edited_df.empty else pd.DataFrame()
-            if not selected_leads.empty:
-                st.divider()
-                st.markdown("#### 🚀 Pipeline to MailForge Outreach")
-                from modules.database.models import MailForgeCampaign
-                mf_campaigns = db.query(MailForgeCampaign).order_by(MailForgeCampaign.created_at.desc()).all()
-                if not mf_campaigns:
-                    st.warning("⚠️ No MailForge outreach campaigns found! Please create one in MailForge settings tab first.")
-                else:
-                    camp_opts = {c.id: c.name for c in mf_campaigns}
-                    selected_mf_camp = st.selectbox(
-                        "Target MailForge Campaign",
-                        options=list(camp_opts.keys()),
-                        format_func=lambda x: camp_opts[x],
-                        key="leads_mf_select"
-                    )
-                    
-                    if st.button("👉 Send Selected Leads to MailForge", type="primary", use_container_width=True):
-                        from modules.mailforge.service import MailForgeService
-                        service = MailForgeService()
-                        selected_lead_ids = selected_leads["Lead ID"].tolist()
-                        added = service.send_leads_to_mailforge(selected_mf_camp, selected_lead_ids)
-                        st.success(f"🎉 Successfully sent **{added}** leads to MailForge Outreach Campaign!")
-                        st.balloons()
 
             # Export
             csv = df.drop(columns=["Select", "Lead ID"]).to_csv(index=False).encode('utf-8')
@@ -736,15 +701,8 @@ elif page_clean in ("Lead Intelligence", "AI Business Audit", "Lead Intelligence
         render_report_viewer()
 
 # ═══════════════════════════════════════════════
-#  EMAIL GENERATOR
-# ═══════════════════════════════════════════════
-elif page_clean == "CRM":
-    from modules.ui.crm_ui import render_crm
-    render_crm()
 
-elif page_clean == "MailForge":
-    from modules.ui.mailforge import render_mailforge
-    render_mailforge()
+# ═══════════════════════════════════════════════
 
 # ═══════════════════════════════════════════════
 #  SETTINGS
