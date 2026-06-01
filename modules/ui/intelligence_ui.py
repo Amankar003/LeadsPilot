@@ -171,8 +171,9 @@ def render_analysis_dashboard():
                                     job = job_repo.create(
                                         campaign_id=campaign_id,
                                         platform=PLATFORM_SERPER_BULK,
-                                        category=item.get("dork_text", ""),
+                                        category=campaign.campaign_name,
                                         location=(campaign.location or ""),
+                                        raw_queries=[item.get("dork_text", "")],
                                         status="PENDING",
                                         total_scraped=0,
                                         total_saved=0
@@ -306,7 +307,7 @@ def render_analysis_dashboard():
                 "Email": l.email or "",
                 "Phone": l.phone or "",
                 "Website": l.website or "",
-                "Category": l.category or "",
+                "Campaign": camp_options.get(selected_camp_id, ""),
                 "Status": status,
                 "Lead Status": l.status
             })
@@ -340,7 +341,7 @@ def render_analysis_dashboard():
                 "Select": st.column_config.CheckboxColumn("Select for Analysis", default=False),
                 "Lead ID": st.column_config.TextColumn("Lead ID", disabled=True),
             },
-            disabled=["Business Name", "Email", "Phone", "Website", "Category", "Status", "Lead Status"],
+            disabled=["Business Name", "Email", "Phone", "Website", "Campaign", "Status", "Lead Status"],
             key="intel_editor"
         )
         

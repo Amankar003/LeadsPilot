@@ -61,6 +61,7 @@ class ScrapingJob(Base):
     platform = Column(String, nullable=False)
     category = Column(String, nullable=False)
     location = Column(String, nullable=False)
+    raw_queries = Column(JSON, default=list)  # Actual dork/search queries for the scraper
     limit = Column(Integer, nullable=True, default=100)
     status = Column(String, default="PENDING")
     enable_fallback = Column(Boolean, default=True)

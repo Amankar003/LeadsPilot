@@ -1,6 +1,6 @@
 import time
 import threading
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from config.database import SessionLocal
 from modules.database.models import ScrapingJob
 from modules.jobs.scraping_planner import ScrapingPlanner
@@ -46,9 +46,12 @@ class BackgroundWorker:
             db = SessionLocal()
             try:
                 # Poll database for pending scraping jobs
-                job = db.query(ScrapingJob).filter(ScrapingJob.status == "PENDING").first()
+                job = db.query(ScrapingJob).options(
+                    joinedload(ScrapingJob.campaign)
+                ).filter(ScrapingJob.status == "PENDING").first()
                 if job:
-                    logger.info(f"Worker picked up pending job: {job.id} ({job.category} in {job.location})")
+                    camp_name = job.campaign.campaign_name if job.campaign else f"ID:{job.campaign_id[:8]}"
+                    logger.info(f"Worker picked up pending job: {job.id} (Campaign: {camp_name})")
                     planner = ScrapingPlanner(db)
                     planner.execute_job(job.id)
             except Exception as e:

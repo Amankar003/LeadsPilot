@@ -1,5 +1,5 @@
 import logging
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from modules.database.models import (
     Campaign, ScrapingJob, Lead, Dork, LeadInsight, EmailDraft, 
@@ -109,7 +109,9 @@ class JobRepository:
         return safe_write(self.db, _write)
 
     def get_all(self):
-        return safe_read(self.db, lambda: self.db.query(ScrapingJob).order_by(ScrapingJob.created_at.desc()).all())
+        return safe_read(self.db, lambda: self.db.query(ScrapingJob)
+            .options(joinedload(ScrapingJob.campaign))
+            .order_by(ScrapingJob.created_at.desc()).all())
         
     def update_status(self, job_id: str, status: str, **kwargs):
         def _write():
@@ -207,7 +209,9 @@ class LeadRepository:
         return safe_read(self.db, _query)
 
     def get_all(self):
-        return safe_read(self.db, lambda: self.db.query(Lead).order_by(Lead.created_at.desc()).all())
+        return safe_read(self.db, lambda: self.db.query(Lead)
+            .options(joinedload(Lead.campaign))
+            .order_by(Lead.created_at.desc()).all())
 
     def update_status(self, lead_id: str, status: str):
         def _write():

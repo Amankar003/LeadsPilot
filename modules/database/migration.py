@@ -95,6 +95,7 @@ def run_migration():
             ('platform', 'VARCHAR(100)', 'VARCHAR(100)'),
             ('category', 'VARCHAR(255)', 'VARCHAR(255)'),
             ('location', 'VARCHAR(255)', 'VARCHAR(255)'),
+            ('raw_queries', 'JSONB', 'JSON'),
             ('limit', 'INTEGER', 'INTEGER'),
             ('status', "VARCHAR(100) DEFAULT 'PENDING'", "VARCHAR(100) DEFAULT 'PENDING'"),
             ('enable_fallback', 'BOOLEAN', 'BOOLEAN'),

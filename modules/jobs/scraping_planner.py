@@ -123,7 +123,12 @@ class ScrapingPlanner:
             job_enable_fallback = job.enable_fallback
             job_max_fallback_results = job.max_fallback_results
             
-            queries = [q.strip() for q in job_category.split('\n') if q.strip()]
+            # Extract queries: prefer raw_queries JSON (new), fallback to category split (legacy)
+            raw_q = getattr(job, 'raw_queries', None)
+            if raw_q and isinstance(raw_q, list) and len(raw_q) > 0:
+                queries = [q.strip() for q in raw_q if q.strip()]
+            else:
+                queries = [q.strip() for q in job_category.split('\n') if q.strip()]
             
             for query in queries:
                 def should_stop():

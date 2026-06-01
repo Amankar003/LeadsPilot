@@ -554,7 +554,8 @@ elif page_clean == "Lead Sources":
             for job in jobs:
                 # Status icon
                 icon = {"PENDING": "⏳", "RUNNING": "🔄", "COMPLETED": "✅", "FAILED": "❌", "STOPPED": "🛑"}.get(job.status, "❓")
-                with st.expander(f"{icon} {job.category} in {job.location} — **{job.status}**", expanded=(job.status == "RUNNING")):
+                camp_name = job.campaign.campaign_name if job.campaign else "Unknown Campaign"
+                with st.expander(f"{icon} {camp_name} — **{job.status}**", expanded=(job.status == "RUNNING")):
                     # Display comprehensive scraping job statistics
                     c1, c2, c3, c4, c5, c6 = st.columns(6)
                     c1.metric("📦 Loaded", job.total_loaded)
@@ -569,7 +570,7 @@ elif page_clean == "Lead Sources":
                         unprocessed = 0
                     st.caption(f"⚡ Unprocessed: {unprocessed}")
 
-                    st.caption(f"Job ID: `{job.id}` • Campaign: `{job.campaign_id[:8]}…` • Platform: {job.platform}")
+                    st.caption(f"Job ID: `{job.id}` • Campaign: **{camp_name}** • Platform: {job.platform} • Location: {job.location}")
 
                     if job.status in ("PENDING", "FAILED"):
                         if st.button("▶️ Start Job", key=f"start_{job.id}", type="primary"):
@@ -607,7 +608,7 @@ elif page_clean == "Lead Sources":
                                 "Email": l.email,
                                 "Phone": l.phone,
                                 "Website": l.website,
-                                "Category": l.category,
+                                "Campaign": camp_name,
                                 "Status": l.status
                             } for l in leads])
                             csv = df.to_csv(index=False).encode('utf-8')
@@ -673,7 +674,7 @@ elif page_clean == "Lead Enrichment":
                     "Email": l.email or "",
                     "Phone": l.phone or "",
                     "Website": l.website or "",
-                    "Category": l.category,
+                    "Campaign": l.campaign.campaign_name if l.campaign else "Unknown",
                     "Page": raw.get("page", ""),
                     "Result URL": raw.get("link", l.website or l.google_maps_url or ""),
                     "Created On": l.created_at.strftime("%Y-%m-%d %H:%M") if l.created_at else "",
@@ -697,7 +698,7 @@ elif page_clean == "Lead Enrichment":
                     "Select": st.column_config.CheckboxColumn(required=True),
                     "Lead ID": None  # Hide Lead ID column
                 },
-                disabled=["Name/Business", "Email", "Phone", "Website", "Category", "Page", "Result URL", "Created On", "Status"],
+                disabled=["Name/Business", "Email", "Phone", "Website", "Campaign", "Page", "Result URL", "Created On", "Status"],
                 hide_index=True,
                 use_container_width=True
             )

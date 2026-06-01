@@ -328,7 +328,7 @@ def format_lead_data(l):
         "Email": l.email or "",
         "Phone": l.phone or "",
         "Website": l.website or "",
-        "Category": l.category,
+        "Campaign": l.campaign.campaign_name if hasattr(l, 'campaign') and l.campaign else "",
         "Page": raw.get("page", raw.get("serp_page", "")),
         "Result URL": raw.get("link", raw.get("result_url", l.website or l.google_maps_url or "")),
         "Created On": l.created_at.strftime("%Y-%m-%d %H:%M") if getattr(l, "created_at", None) else "",

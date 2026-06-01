@@ -113,7 +113,7 @@ def render_campaign_card(campaign: Campaign):
                     "Email": l.email,
                     "Phone": l.phone,
                     "Website": l.website,
-                    "Category": l.category,
+                    "Campaign": campaign.campaign_name,
                     "Status": l.status
                 } for l in leads])
                 csv_bytes = df.to_csv(index=False).encode('utf-8')

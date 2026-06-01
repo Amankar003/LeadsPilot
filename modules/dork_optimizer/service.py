@@ -245,21 +245,21 @@ class DorkOptimizerService:
         if not dorks:
             raise ValueError("No selected dorks found.")
             
-        # 2. Compile query list (newline-joined string of dorks)
+        # 2. Compile query list
         dork_queries = []
         for d in dorks:
             dork_queries.append(d.dork)
             d.status = "scraped"
             
-        category_queries = "\n".join(dork_queries)
-        
-        # 3. Create single pending ScrapingJob representing these queries
-        # The background worker automatically picks it up and executes each dork!
+        # 3. Create single pending ScrapingJob
+        # Store dork queries in raw_queries (JSON) so scraper can read them.
+        # Use campaign name as category for clean UI display.
         job = self.job_repo.create(
             campaign_id=campaign_id,
             platform=platform,
-            category=category_queries,
+            category=campaign.campaign_name,
             location=campaign.location or "Global",
+            raw_queries=dork_queries,
             status="PENDING",
             total_scraped=0,
             total_saved=0
