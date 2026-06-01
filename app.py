@@ -272,7 +272,7 @@ if page_clean == "Dashboard":
             for j in jobs[:5]:
                 job_data.append({
                     "Platform": j.platform,
-                    "Category": j.category,
+                    "Campaign": j.campaign.campaign_name if j.campaign else "Unknown",
                     "Location": j.location,
                     "Scraped": j.total_scraped,
                     "Saved": j.total_saved,

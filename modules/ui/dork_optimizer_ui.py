@@ -9,6 +9,29 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+@st.dialog("Create New Campaign")
+def create_campaign_modal(db):
+    from datetime import datetime
+    from modules.database.models import get_or_create_default_user
+    
+    st.markdown("All scraped data must be linked to a campaign.")
+    default_name = f"Auto Campaign - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    new_camp_name = st.text_input("Campaign Name", value=default_name)
+    new_camp_source = st.selectbox("Source", ["Manual Dork Generator", "Auto Dork Optimizer"])
+    
+    if st.button("Create & Continue", type="primary"):
+        user = get_or_create_default_user(db)
+        new_camp = CampaignRepository(db).create(
+            user_id=user.id,
+            campaign_name=new_camp_name,
+            category=new_camp_source,
+            location="Global",
+            platform="serper_bulk",
+            status="PENDING"
+        )
+        st.session_state["newly_created_campaign_id"] = new_camp.id
+        st.rerun()
+
 def render_dork_optimizer():
     page_header("🔍", "Dork Optimizer", "Proactively discover rising B2B trends and compile hyper-targeted search dorks to scrape premium leads.")
     
@@ -160,27 +183,48 @@ def render_dork_optimizer():
                             selected_dork_ids = edited_df[edited_df["Select"] == True]["Dork ID"].tolist()
                             
                             # Campaign dispatcher
-                            if campaigns:
-                                sc1, sc2 = st.columns([2, 1])
-                                with sc1:
+                            st.markdown("##### ⚙️ Target Campaign Selection")
+                            
+                            if st.session_state.get("newly_created_campaign_id"):
+                                # Ensure campaigns list is refreshed
+                                campaigns = campaign_repo.get_all() or []
+                                
+                            sc1, sc2 = st.columns([2, 1])
+                            with sc1:
+                                if campaigns:
+                                    # Select the newly created campaign if present
+                                    default_index = 0
+                                    new_id = st.session_state.get("newly_created_campaign_id")
+                                    if new_id:
+                                        for i, c in enumerate(campaigns):
+                                            if c.id == new_id:
+                                                default_index = i
+                                                break
+                                                
                                     selected_camp = st.selectbox(
                                         "Select Target Campaign",
                                         options=[c.id for c in campaigns],
                                         format_func=lambda x: next(c.campaign_name for c in campaigns if c.id == x),
+                                        index=default_index,
                                         key=f"opp_camp_{opp_idx}"
                                     )
-                                with sc2:
-                                    st.write("") # Spacing
-                                    st.write("") # Spacing
-                                    if st.button("Send Dorks to Scraper", key=f"opp_send_btn_{opp_idx}", use_container_width=True, type="secondary"):
-                                        if not selected_dork_ids:
-                                            st.warning("Please select at least one dork query.")
-                                        else:
-                                            with st.spinner("Pushing job to database worker..."):
-                                                scraper_res = service.send_dorks_to_scraper(selected_dork_ids, selected_camp)
-                                                st.success(f"🚀 Scraping Job {scraper_res['job_id']} queued! The background worker will pick it up automatically within 5 seconds. Generated leads will automatically flow to AI Business Audit and MailForge.")
-                            else:
-                                st.info("Create a Campaign first in the sidebar to send dorks to the scraping pipeline.")
+                                else:
+                                    selected_camp = None
+                                    st.info("No campaigns exist. Create one to continue.")
+                                    
+                                if st.button("➕ Create New Campaign", key=f"opp_create_btn_{opp_idx}"):
+                                    create_campaign_modal(db)
+                                    
+                            with sc2:
+                                st.write("") # Spacing
+                                st.write("") # Spacing
+                                if selected_camp and st.button("Send Dorks to Scraper", key=f"opp_send_btn_{opp_idx}", use_container_width=True, type="primary"):
+                                    if not selected_dork_ids:
+                                        st.warning("Please select at least one dork query.")
+                                    else:
+                                        with st.spinner("Pushing job to database worker..."):
+                                            scraper_res = service.send_dorks_to_scraper(selected_dork_ids, selected_camp)
+                                            st.success(f"🚀 Scraping Job {scraper_res['job_id']} queued! The background worker will pick it up automatically within 5 seconds. Generated leads will automatically flow to AI Business Audit and MailForge.")
                         else:
                             st.write("No dorks compiled for this opportunity.")
                             
@@ -284,14 +328,30 @@ def render_dork_optimizer():
                 
                 with ac_col1:
                     # Select campaign
+                    st.markdown("##### ⚙️ Target Campaign Selection")
+                    if st.session_state.get("newly_created_campaign_id"):
+                        campaigns = campaign_repo.get_all() or []
+                        
                     if campaigns:
+                        default_index = 0
+                        new_id = st.session_state.get("newly_created_campaign_id")
+                        if new_id:
+                            for i, c in enumerate(campaigns):
+                                if c.id == new_id:
+                                    default_index = i
+                                    break
+                                    
                         m_selected_camp = st.selectbox(
                             "Select Scraper Campaign",
                             options=[c.id for c in campaigns],
                             format_func=lambda x: next(c.campaign_name for c in campaigns if c.id == x),
+                            index=default_index,
                             key="manual_target_camp"
                         )
                         
+                        if st.button("➕ Create New Campaign", key="m_create_btn"):
+                            create_campaign_modal(db)
+                            
                         sub_c1, sub_c2 = st.columns(2)
                         with sub_c1:
                             if st.button("Send Selected to Scraper", key="send_sel_scraper_btn", use_container_width=True, type="primary"):
@@ -308,7 +368,9 @@ def render_dork_optimizer():
                                     m_res = service.send_dorks_to_scraper(all_dork_ids, m_selected_camp)
                                     st.success(f"🚀 Scraping Job {m_res['job_id']} queued! The background worker will pick it up automatically within 5 seconds. Leads will automatically flow to CRM and MailForge.")
                     else:
-                        st.info("Create a Campaign first in the sidebar to send dorks to the scraping pipeline.")
+                        st.info("No campaigns exist. Create one to continue.")
+                        if st.button("➕ Create New Campaign", key="m_create_btn_empty"):
+                            create_campaign_modal(db)
                         
                 with ac_col2:
                     st.write("") # Spacing

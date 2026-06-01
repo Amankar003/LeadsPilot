@@ -22,4 +22,6 @@ lxml
 cssselect
 feedparser
 pg8000
-
+fastapi
+uvicorn
+python-multipart
