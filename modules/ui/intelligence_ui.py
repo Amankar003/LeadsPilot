@@ -3,6 +3,8 @@ import pandas as pd
 from utils.logging_utils import get_logger
 from config.database import SessionLocal
 from modules.database.models import Campaign, ScrapingJob, Lead, Dork, AnalysisJob, AnalysisReport
+from sqlalchemy.orm import joinedload
+from modules.database.dtos import lead_to_dto
 from modules.analysis.job_processor import queue_analysis_job, get_job_status, get_report
 from modules.database.repositories import EmailDraftRepository, LeadRepository, DorkRepository, JobRepository, CampaignRepository
 from modules.ui.theme import page_header, empty_state, make_dataframe_arrow_compatible
@@ -206,7 +208,8 @@ def render_analysis_dashboard():
             logger.warning(f"Dork module warning: {dork_err}")
         
         # Load leads for campaign
-        leads = db.query(Lead).filter(Lead.campaign_id == selected_camp_id).all()
+        orm_leads = db.query(Lead).options(joinedload(Lead.campaign)).filter(Lead.campaign_id == selected_camp_id).all()
+        leads = [lead_to_dto(l) for l in orm_leads]
         if not leads:
             empty_state("👥", "No Leads", "No leads found for this campaign.")
             return

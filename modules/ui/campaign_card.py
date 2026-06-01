@@ -7,6 +7,8 @@ from modules.analysis.job_processor import queue_analysis_job, get_report
 from modules.analysis.outreach_generator import generate_outreach
 from modules.database.repositories import OutreachMessageRepository
 from modules.export.email_csv_exporter import EmailCSVExporter
+from sqlalchemy.orm import joinedload
+from modules.database.dtos import lead_to_dto
 
 def render_campaign_card(campaign: Campaign):
     st.markdown(f"### 🎯 {campaign.campaign_name}")
@@ -14,8 +16,9 @@ def render_campaign_card(campaign: Campaign):
     
     db = SessionLocal()
     try:
-        # Calculate Metrics
-        leads = db.query(Lead).filter(Lead.campaign_id == campaign.id).all()
+        # Convert ORM leads to DTOs to avoid DetachedInstanceError in UI
+        orm_leads = db.query(Lead).options(joinedload(Lead.campaign)).filter(Lead.campaign_id == campaign.id).all()
+        leads = [lead_to_dto(l) for l in orm_leads]
         total_leads = len(leads)
         
         # We need Lead IDs to query AnalysisJobs and OutreachMessages efficiently

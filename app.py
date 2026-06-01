@@ -9,6 +9,7 @@ from config import settings
 from config.database import SessionLocal
 from modules.database.db_init import init_db
 from modules.database.repositories import CampaignRepository, JobRepository, LeadRepository
+from modules.database.dtos import lead_to_dto, job_to_dto
 from modules.input.manual_input import parse_manual_input
 from modules.input.excel_parser import parse_excel_input
 from modules.jobs.job_manager import JobManager
@@ -230,8 +231,9 @@ if page_clean == "Dashboard":
     db = SessionLocal()
     try:
         campaigns = CampaignRepository(db).get_all()
-        jobs = JobRepository(db).get_all()
-        leads = LeadRepository(db).get_all()
+        # Fetch ORM objects and convert them to pure Python DTOs immediately
+        jobs = [job_to_dto(j) for j in JobRepository(db).get_all()]
+        leads = [lead_to_dto(l) for l in LeadRepository(db).get_all()]
 
         from modules.database.models import LeadInsight
 
@@ -338,6 +340,7 @@ elif page_clean == "Campaigns":
             try:
                 from modules.database.models import Lead
                 recent_leads = db.query(Lead).filter(Lead.scraping_job_id == running_maps_job.id).order_by(Lead.created_at.desc()).limit(15).all()
+                recent_leads = [lead_to_dto(l) for l in recent_leads]
                 if recent_leads:
                     st.markdown("##### 📌 Latest Extracted Leads")
                     lead_data = [{"Business": l.business_name, "Phone": l.phone or "N/A", "Rating": l.rating or "N/A"} for l in recent_leads]
@@ -397,6 +400,7 @@ elif page_clean == "Campaigns":
                 try:
                     from modules.database.models import Lead
                     extracted_leads = db.query(Lead).filter(Lead.scraping_job_id == last_maps_job.id).order_by(Lead.created_at.desc()).all()
+                    extracted_leads = [lead_to_dto(l) for l in extracted_leads]
                     if extracted_leads:
                         st.markdown("##### 📊 Extracted Data")
                         lead_data = []
@@ -546,7 +550,8 @@ elif page_clean == "Lead Sources":
 
     db = SessionLocal()
     try:
-        jobs = JobRepository(db).get_all()
+        # Convert jobs to pure Python dictionaries to prevent DetachedInstanceError
+        jobs = [job_to_dto(j) for j in JobRepository(db).get_all()]
 
         if not jobs:
             empty_state("🔍", "No Scraping Jobs", "Create a campaign first, then start the scraping job.")
@@ -587,8 +592,7 @@ elif page_clean == "Lead Sources":
 
                     if job.status in ("RUNNING", "PENDING"):
                         if st.button("🛑 Stop Job", key=f"stop_{job.id}", type="primary"):
-                            job.status = "STOPPED"
-                            db.commit()
+                            JobRepository(db).update_status(job.id, "STOPPED")
                             st.success("Stopping signal sent!")
                             st.rerun()
 
@@ -601,7 +605,8 @@ elif page_clean == "Lead Sources":
                             
                     with col_dl:
                         from modules.database.models import Lead
-                        leads = db.query(Lead).filter(Lead.scraping_job_id == job.id).all()
+                        leads = db.query(Lead).options(joinedload(Lead.campaign)).filter(Lead.scraping_job_id == job.id).all()
+                        leads = [lead_to_dto(l) for l in leads]
                         if leads:
                             df = pd.DataFrame([{
                                 "Business Name": l.business_name,
@@ -620,7 +625,8 @@ elif page_clean == "Lead Sources":
 
                     if st.session_state.get("view_job_id") == job.id:
                         from modules.database.models import Lead
-                        job_leads = db.query(Lead).filter(Lead.scraping_job_id == job.id).all()
+                        job_leads = db.query(Lead).options(joinedload(Lead.campaign)).filter(Lead.scraping_job_id == job.id).all()
+                        job_leads = [lead_to_dto(l) for l in job_leads]
                         if job_leads:
                             lead_data = [{"Business": l.business_name, "Email": l.email, "Phone": l.phone, "Website": l.website} for l in job_leads]
                             st.dataframe(pd.DataFrame(lead_data), hide_index=True, width="stretch")
@@ -649,7 +655,7 @@ elif page_clean == "Lead Enrichment":
 
     db = SessionLocal()
     try:
-        leads = LeadRepository(db).get_all()
+        leads = [lead_to_dto(l) for l in LeadRepository(db).get_all()]
 
         if not leads:
             empty_state("👥", "No Leads Yet", "Run a scraping job to populate your lead database.")
