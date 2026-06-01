@@ -6,6 +6,7 @@ All output is grounded in actual evidence — no hallucination.
 import json
 from modules.ai.ai_client import AIClient
 from utils.logging_utils import get_logger
+from config import settings
 
 logger = get_logger(__name__)
 
@@ -148,9 +149,9 @@ def generate_followup(lead, email_subject: str, email_body: str, followup_number
     result = ai.generate_json(prompt)
     if "error" in result:
         if followup_number == 1:
-            return f"Hi,\n\nI wanted to follow up on my previous email regarding some digital improvement ideas for {lead.business_name}. I know you're busy, but I'd love to share 2-3 specific ways you can increase your enquiries.\n\nWould you be open to a quick 5-minute chat next week?\n\nBest regards,\n{os.getenv('SENDER_NAME', 'Deepak Kishor')}\n{os.getenv('SENDER_ROLE', 'Founder & Lead Strategist')}\n3FI Tech\n{os.getenv('AGENCY_WEBSITE', '3fitech.com')}"
+            return f"Hi,\n\nI wanted to follow up on my previous email regarding some digital improvement ideas for {lead.business_name}. I know you're busy, but I'd love to share 2-3 specific ways you can increase your enquiries.\n\nWould you be open to a quick 5-minute chat next week?\n\nBest regards,\n{settings.SENDER_NAME}\n{settings.SENDER_ROLE}\n3FI Tech\n{settings.AGENCY_WEBSITE}"
         else:
-            return f"Hi,\n\nJust sending a quick final follow-up. If you're not the right person or if this isn't a priority for {lead.business_name} right now, no worries at all.\n\nIf you are interested in a quick, low-risk way to boost your online discoverability, feel free to reply here.\n\nBest,\n{os.getenv('SENDER_NAME', 'Deepak Kishor')}\n{os.getenv('SENDER_ROLE', 'Founder & Lead Strategist')}\n3FI Tech\n{os.getenv('AGENCY_WEBSITE', '3fitech.com')}"
+            return f"Hi,\n\nJust sending a quick final follow-up. If you're not the right person or if this isn't a priority for {lead.business_name} right now, no worries at all.\n\nIf you are interested in a quick, low-risk way to boost your online discoverability, feel free to reply here.\n\nBest,\n{settings.SENDER_NAME}\n{settings.SENDER_ROLE}\n3FI Tech\n{settings.AGENCY_WEBSITE}"
             
     return result.get("body", "")
 
@@ -506,9 +507,9 @@ def generate_outreach(
 
     lead_data_text = json.dumps(lead_data_dict, indent=2, ensure_ascii=False)
 
-    sender_name = os.getenv("SENDER_NAME", "Deepak Kishor")
-    sender_role = os.getenv("SENDER_ROLE", "Founder & Lead Strategist")
-    agency_website = os.getenv("AGENCY_WEBSITE", "3fitech.com")
+    sender_name = settings.SENDER_NAME
+    sender_role = settings.SENDER_ROLE
+    agency_website = settings.AGENCY_WEBSITE
 
     # Format the prompt
     prompt = EMAIL_GENERATOR_PROMPT.format(

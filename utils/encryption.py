@@ -17,7 +17,8 @@ def _get_fernet() -> Fernet:
     if _fernet_instance is not None:
         return _fernet_instance
 
-    key = os.getenv("MAILFORGE_ENCRYPTION_KEY", "")
+    from config import settings
+    key = settings.MAILFORGE_SECRET_KEY
     if not key:
         raise RuntimeError(
             "MAILFORGE_ENCRYPTION_KEY is not set in .env. "

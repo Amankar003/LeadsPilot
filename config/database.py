@@ -29,9 +29,10 @@ if is_postgres:
     # Allow runtime configuration of pool behavior via env vars:
     # - DB_USE_NULL_POOL (true/1) to use NullPool (no persistent connections)
     # - DB_POOL_SIZE, DB_MAX_OVERFLOW, DB_POOL_TIMEOUT to tune QueuePool
-    use_null = os.getenv("DB_USE_NULL_POOL", "").lower() in ("1", "true", "yes")
+    from config import settings
+    use_null = settings.DB_USE_NULL_POOL
     # Auto-enable NullPool for serverless providers (common pattern)
-    if not use_null and ("supabase.co" in db_url or os.getenv("DB_SERVERLESS", "").lower() in ("1", "true", "yes")):
+    if not use_null and ("supabase.co" in db_url or settings.DB_SERVERLESS):
         use_null = True
 
     if use_null:
@@ -44,9 +45,9 @@ if is_postgres:
             },
         )
     else:
-        pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
-        max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "0"))
-        pool_timeout = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+        pool_size = settings.DB_POOL_SIZE
+        max_overflow = settings.DB_MAX_OVERFLOW
+        pool_timeout = settings.DB_POOL_TIMEOUT
         engine = create_engine(
             db_url,
             pool_pre_ping=True,

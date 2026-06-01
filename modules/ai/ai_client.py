@@ -2,15 +2,15 @@ import json
 import os
 from groq import Groq
 from utils.logging_utils import get_logger
-from config.settings import GROQ_API_KEY, GROQ_MODEL
+from config import settings
 
 logger = get_logger(__name__)
 
 class AIClient:
     def __init__(self):
-        # Load directly from settings or environment variables
-        self.groq_api_key = GROQ_API_KEY or os.getenv("GROQ_API_KEY", "")
-        self.groq_model = GROQ_MODEL or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        # Load directly from settings
+        self.groq_api_key = settings.GROQ_API_KEY
+        self.groq_model = settings.GROQ_MODEL
         
         # Initialize Groq client
         self.groq_client = None

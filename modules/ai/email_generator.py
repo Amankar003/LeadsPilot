@@ -2,6 +2,7 @@ import json
 import os
 from modules.ai.ai_client import AIClient
 from modules.ai.prompts import EMAIL_GENERATOR_PROMPT, FOLLOWUP_GENERATOR_PROMPT
+from config import settings
 
 class EmailGenerator:
     """
@@ -108,9 +109,9 @@ class EmailGenerator:
                              "- If only name/category/location are available: Focus on general digital discoverability and enquiry handling."
 
         sender_info = sender or {}
-        sender_name = sender_info.get("sender_name", os.getenv("SENDER_NAME", "Deepak Kishor"))
-        sender_role = sender_info.get("sender_role", os.getenv("SENDER_ROLE", "Founder & Lead Strategist"))
-        agency_website = sender_info.get("agency_website", os.getenv("AGENCY_WEBSITE", "3fitech.com"))
+        sender_name = sender_info.get("sender_name", settings.SENDER_NAME)
+        sender_role = sender_info.get("sender_role", settings.SENDER_ROLE)
+        agency_website = sender_info.get("agency_website", settings.AGENCY_WEBSITE)
 
         prompt = EMAIL_GENERATOR_PROMPT.format(
             lead_data=json.dumps(lead_data_dict, indent=2, ensure_ascii=False),
@@ -209,12 +210,12 @@ class EmailGenerator:
             if followup_number == 1:
                 return {
                     "subject": f"Re: {original_subject}",
-                    "body": f"Hi,\n\nI wanted to follow up on my previous email regarding some digital improvement ideas for {lead_details['business_name']}. I know you're busy, but I'd love to share 2-3 specific ways you can increase your enquiries.\n\nWould you be open to a quick 5-minute chat next week?\n\nBest regards,\n{os.getenv('SENDER_NAME', 'Aman Kar')}"
+                    "body": f"Hi,\n\nI wanted to follow up on my previous email regarding some digital improvement ideas for {lead_details['business_name']}. I know you're busy, but I'd love to share 2-3 specific ways you can increase your enquiries.\n\nWould you be open to a quick 5-minute chat next week?\n\nBest regards,\n{settings.SENDER_NAME}"
                 }
             else:
                 return {
                     "subject": f"Re: {original_subject}",
-                    "body": f"Hi,\n\nJust sending a quick final follow-up. If you're not the right person or if this isn't a priority for {lead_details['business_name']} right now, no worries at all.\n\nBest,\n{os.getenv('SENDER_NAME', 'Aman Kar')}"
+                    "body": f"Hi,\n\nJust sending a quick final follow-up. If you're not the right person or if this isn't a priority for {lead_details['business_name']} right now, no worries at all.\n\nBest,\n{settings.SENDER_NAME}"
                 }
 
         return result

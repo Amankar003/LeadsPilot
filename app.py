@@ -4,10 +4,7 @@ import threading
 import os
 import time
 from utils.logging_utils import get_logger
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
+from config import settings
 
 from config.database import SessionLocal
 from modules.database.db_init import init_db
@@ -39,11 +36,19 @@ setup_database()
 def run_startup_checks():
     issues = []
     optional = []
-    if not os.getenv("DATABASE_URL"):
+    
+    # Startup Logging for Secrets Detection
+    logger.info("=== Environment Variables Detection ===")
+    logger.info(f"DATABASE_URL detected: {'YES' if settings.DATABASE_URL and settings.DATABASE_URL != 'sqlite:///leadpilot.db' else 'NO (Using SQLite fallback)'}")
+    logger.info(f"GROQ_API_KEY detected: {'YES' if settings.GROQ_API_KEY else 'NO'}")
+    logger.info(f"SERPER_API_KEY detected: {'YES' if settings.SERPER_API_KEY else 'NO'}")
+    logger.info("=======================================")
+
+    if not settings.DATABASE_URL or settings.DATABASE_URL == "sqlite:///leadpilot.db":
         optional.append("DATABASE_URL not set, using local SQLite.")
-    if not os.getenv("SERPER_API_KEY"):
+    if not settings.SERPER_API_KEY:
         optional.append("SERPER_API_KEY missing: Serper features will be limited.")
-    if not os.getenv("GROQ_API_KEY"):
+    if not settings.GROQ_API_KEY:
         optional.append("No Groq API key configured. Fallback generation only.")
     for item in issues:
         st.error(item)
@@ -59,7 +64,8 @@ def launch_job(target, *args):
     Run jobs in background for local mode, inline for worker mode.
     Set LEADPILOT_WORKER_MODE=true when using external workers.
     """
-    if os.getenv("LEADPILOT_WORKER_MODE", "false").lower() == "true":
+    worker_mode = str(settings.get_env_var("LEADPILOT_WORKER_MODE", "false")).lower() == "true"
+    if worker_mode:
         target(*args)
         return None
     thread = threading.Thread(target=target, args=args, daemon=True)
