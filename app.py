@@ -8,6 +8,7 @@ from config import settings
 
 from config.database import SessionLocal
 from modules.database.db_init import init_db
+from sqlalchemy.orm import joinedload
 from modules.database.repositories import CampaignRepository, JobRepository, LeadRepository
 from modules.database.dtos import lead_to_dto, job_to_dto
 from modules.input.manual_input import parse_manual_input
