@@ -51,9 +51,9 @@ def run_startup_checks():
     if not settings.GROQ_API_KEY:
         optional.append("No Groq API key configured. Fallback generation only.")
     for item in issues:
-        st.error(item)
+        logger.error(f"Startup Issue: {item}")
     for item in optional:
-        st.warning(item)
+        logger.warning(f"Startup Warning: {item}")
 
 
 run_startup_checks()
@@ -116,6 +116,26 @@ def _get_query_params():
         except Exception:
             return {}
 
+# ─── Authentication Middleware ───
+if not st.session_state.get("authenticated", False):
+    st.markdown("<h2 style='text-align: center; margin-top: 50px;'>🔒 Login to LeadPilot AI</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center;'>Admin access required.</p>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("login_form"):
+            email_input = st.text_input("Email")
+            password_input = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Login", use_container_width=True)
+            
+            if submitted:
+                if email_input == settings.ADMIN_EMAIL and password_input == settings.ADMIN_PASSWORD:
+                    st.session_state["authenticated"] = True
+                    st.rerun()
+                else:
+                    st.error("Invalid email or password.")
+    st.stop()
+
 # ─── Sidebar ───
 # If a `?page=...` query param is present, set the sidebar radio's session state
 # so the deep link pre-selects the desired page.
@@ -150,6 +170,11 @@ with st.sidebar:
     )
 
     st.divider()
+    
+    if st.button("Logout", use_container_width=True):
+        st.session_state["authenticated"] = False
+        st.rerun()
+        
     st.caption("v2.0 • LeadPilot AI")
 
 

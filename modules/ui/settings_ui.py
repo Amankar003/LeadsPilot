@@ -61,27 +61,6 @@ def render_settings():
     st.divider()
     st.markdown("##### 📖 Setup Guide")
 
-    with st.expander("How to configure API keys"):
-        st.markdown("""
-Edit your `.env` file in the project root:
-
-```env
-# AI
-GROQ_API_KEY=your_groq_api_key_here
-GROQ_MODEL=llama-3.3-70b-versatile
-
-# Email Settings
-# Email sending is handled externally using downloaded CSVs.
-
-# Safety Limits
-DEFAULT_EMAIL_DELAY_SECONDS=30
-MAX_EMAILS_PER_RUN=20
-MAX_FOLLOWUPS=2
-```
-
-Then restart the Streamlit app: `streamlit run app.py`
-        """)
-
     with st.expander("Safety best practices"):
         st.markdown("""
 - ✅ Always review AI-generated drafts before exporting

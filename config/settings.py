@@ -28,6 +28,10 @@ GROQ_MODEL = get_env_var("GROQ_MODEL", "llama-3.3-70b-versatile")
 SERPER_API_KEY = get_env_var("SERPER_API_KEY", "")
 SERP_API_KEY = get_env_var("SERP_API_KEY", "")
 
+# Authentication Settings
+ADMIN_EMAIL = get_env_var("ADMIN_EMAIL", "admin@leadpilot.ai")
+ADMIN_PASSWORD = get_env_var("ADMIN_PASSWORD", "admin123")
+
 # Outreach Configuration (Agency Info)
 SENDER_NAME = get_env_var("SENDER_NAME", "Deepak Kishor")
 SENDER_ROLE = get_env_var("SENDER_ROLE", "Founder & Lead Strategist")
