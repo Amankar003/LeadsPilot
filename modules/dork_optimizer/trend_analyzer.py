@@ -1,121 +1,274 @@
-import logging
-from typing import List, Dict, Any
-from modules.dork_optimizer.constants import TARGET_SERVICES
+"""
+LLM-1 — Trend Analyzer.
 
-logger = logging.getLogger(__name__)
+Takes today's fresh source data, sends to Gemini, returns structured trends.
+"""
 
-# Categories list for keyword matching
-CATEGORIES_MAP = {
-    "Real Estate": ["real estate", "broker", "realtor", "property", "apartment", "agency", "agencies"],
-    "Healthcare": ["clinic", "medical", "doctor", "dental", "dentist", "practitioner", "hospital", "patient"],
-    "Retail": ["retail", "shop", "boutique", "store", "commerce", "sales", "merchant"],
-    "Contractor Services": ["solar", "contractor", "hvac", "plumber", "electrician", "builder", "landscaping", "roofing"],
-    "Professional Services": ["consultancy", "consulting", "lawyer", "accountant", "agency", "b2b", "professional"],
-    "Hospitality": ["hotel", "restaurant", "cafe", "resort", "food", "dining", "hospitality"]
-}
+from modules.dork_optimizer.utils import call_llm, extract_json_from_response, TREND_MODEL, SERVICES_LIST
+from modules.dork_optimizer.services.market_filter import is_india_market
 
-# Country and region mappings for keyword matching
-GEOGRAPHIES = {
-    "US": {"country": "US", "state": "Florida", "region": "Miami"},
-    "United States": {"country": "US", "state": "New York", "region": "New York"},
-    "UK": {"country": "UK", "state": "England", "region": "London"},
-    "United Kingdom": {"country": "UK", "state": "England", "region": "London"},
-    "UAE": {"country": "UAE", "state": "Dubai", "region": "Dubai"},
-    "Dubai": {"country": "UAE", "state": "Dubai", "region": "Dubai"},
-    "Australia": {"country": "Australia", "state": "New South Wales", "region": "Sydney"},
-    "Sydney": {"country": "Australia", "state": "New South Wales", "region": "Sydney"},
-    "Canada": {"country": "Canada", "state": "Ontario", "region": "Toronto"},
-    "Toronto": {"country": "Canada", "state": "Ontario", "region": "Toronto"},
-    "Singapore": {"country": "Singapore", "state": "Singapore", "region": "Singapore"}
-}
+SYSTEM_PROMPT = """You are a B2B market intelligence analyst for 3FI Tech, a digital services agency.
+
+Analyze raw source data and identify actionable B2B opportunities where businesses need digital services.
+
+Rules:
+- STRICT RULE: Do NOT output any India recommendations or Indian market opportunities. Completely skip them.
+- ONLY output foreign market opportunities.
+- Preferred markets: USA, UAE, UK, Canada, Australia, Singapore, Saudi Arabia, Qatar, Kuwait, Germany, Netherlands, France, New Zealand.
+- Do NOT invent trends. Use only the provided source data.
+- If data is weak or vague, lower the confidence_score.
+- Country and region must come from the source data.
+- Do not output duplicate trends.
+- Maximum 20 trends.
+- Output valid JSON object only (must start with {), no markdown, no explanation."""
+
+# ── Max items to send to LLM (keeps prompt within token limits) ──
+MAX_ITEMS_NORMAL = 20
+MAX_ITEMS_RETRY = 10
+MAX_FIELD_LENGTH = 200
+
+
+def _truncate(text: str, max_len: int = MAX_FIELD_LENGTH) -> str:
+    """Truncate a string to max_len characters."""
+    if not text:
+        return ""
+    text = str(text).strip()
+    return text[:max_len] if len(text) > max_len else text
+
+
+def _prepare_source_text(source_items: list[dict], max_items: int) -> str:
+    """Build a compact source text for the LLM prompt using only essential fields."""
+    lines = []
+    for i, item in enumerate(source_items[:max_items], 1):
+        title = _truncate(item.get("title", ""))
+        source = _truncate(item.get("source_name", ""), 50)
+        source_type = _truncate(item.get("source_type", ""), 30)
+        country = _truncate(item.get("country", ""), 50)
+        region = _truncate(item.get("region", ""), 50)
+        keyword = _truncate(item.get("keyword", ""), 80)
+        # Only include a very short summary if available, skip raw_text entirely
+        summary = _truncate(item.get("summary", ""), 120)
+
+        lines.append(f"Source {i}:")
+        if title:
+            lines.append(f"  Title: {title}")
+        if source or source_type:
+            lines.append(f"  Source: {source} ({source_type})")
+        if country:
+            lines.append(f"  Country: {country}")
+        if region:
+            lines.append(f"  Region: {region}")
+        if keyword:
+            lines.append(f"  Keyword: {keyword}")
+        if summary:
+            lines.append(f"  Summary: {summary}")
+        lines.append(f"  ID: {item.get('id', i)}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _build_prompt(source_text: str, item_count: int) -> str:
+    """Build the LLM prompt."""
+    services_str = ", ".join(SERVICES_LIST)
+    return f"""Analyze these {item_count} raw market signals and identify up to 20 B2B campaign opportunities for 3FI Tech.
+
+CRITICAL DIRECTIVE: Do NOT output any opportunities for the India market. Only focus on foreign markets.
+Preferred foreign markets to target: USA, UAE, UK, Canada, Australia, Singapore, Saudi Arabia, Qatar, Kuwait, Germany, Netherlands, France, New Zealand.
+
+3FI Tech services: {services_str}
+
+SOURCE DATA:
+{source_text}
+
+Return a JSON object ONLY with a "trends" key containing the list of campaign opportunities:
+{{
+  "trends": [
+    {{
+      "trend_name": "Short descriptive trend title",
+      "country": "Country from source data",
+      "region": "City/region from source data",
+      "sector": "tourism / real estate / healthcare / ecommerce / ai digital transformation / manufacturing / education / b2b services / wedding events / immigration",
+      "domain": "Specific business domain affected",
+      "business_requirements": ["requirement1", "requirement2"],
+      "why_this_region": "Why this region is high-potential right now",
+      "why_this_sector": "Why businesses in this sector need help",
+      "recommended_service": "One service from 3FI's list that fits best",
+      "confidence_score": 75,
+      "source_ids": [1, 2]
+    }}
+  ]
+}}
+
+confidence_score rules:
+- 90-100: Multiple strong live sources confirm this trend
+- 70-89: Clear signal from at least 1 source
+- 50-69: Weak or indirect signal
+- Below 50: Do not include"""
+
+
+def _parse_llm_result(raw: str) -> list[dict]:
+    """Parse the LLM response into a list of trend dicts."""
+    result = extract_json_from_response(raw)
+
+    if isinstance(result, list):
+        return result[:20]
+    elif isinstance(result, dict):
+        if "error" in result:
+            err_msg = result.get("error", "")
+            print(f"[TrendAnalyzer] LLM returned error: {err_msg}")
+            return []
+        for key in ["trends", "opportunities", "analysis"]:
+            if key in result and isinstance(result[key], list):
+                return result[key][:20]
+        return [result]
+    return []
+
+
+def _generate_deterministic_fallback(source_items: list[dict]) -> list[dict]:
+    """Generate basic trend entries from source data without LLM — last-resort fallback."""
+    from modules.dork_optimizer.services.market_filter import is_india_market
+
+    # Simple sector detection keywords
+    sector_keywords = {
+        "tourism": ["tourism", "hotel", "travel", "resort", "hospitality"],
+        "real estate": ["real estate", "property", "housing", "construction"],
+        "healthcare": ["health", "medical", "clinic", "hospital", "dental"],
+        "ecommerce": ["ecommerce", "e-commerce", "shopify", "online store", "retail"],
+        "ai digital transformation": ["digital", "ai", "automation", "software", "tech"],
+        "manufacturing": ["manufacturing", "factory", "industrial", "export"],
+        "education": ["education", "training", "school", "university", "learning"],
+        "b2b services": ["consulting", "services", "business", "agency"],
+    }
+
+    trends = []
+    seen = set()
+    for item in source_items[:MAX_ITEMS_NORMAL]:
+        # Skip India items
+        if is_india_market(item):
+            continue
+
+        country = (item.get("country") or "").strip()
+        region = (item.get("region") or "").strip()
+        title = (item.get("title") or "").strip()
+
+        if not country or not title:
+            continue
+
+        # Skip India
+        if country.lower() in ("india", "in", "bharat"):
+            continue
+
+        # Detect sector
+        combined = f"{title} {item.get('keyword', '')}".lower()
+        detected_sector = "b2b services"
+        for sector, kws in sector_keywords.items():
+            if any(kw in combined for kw in kws):
+                detected_sector = sector
+                break
+
+        # Dedupe by country+sector
+        key = f"{country.lower()}:{detected_sector}"
+        if key in seen:
+            continue
+        seen.add(key)
+
+        trends.append({
+            "trend_name": _truncate(title, 100),
+            "country": country,
+            "region": region,
+            "sector": detected_sector,
+            "domain": detected_sector,
+            "business_requirements": ["Website Development", "Local SEO"],
+            "why_this_region": f"Signal detected from live source data for {country}",
+            "why_this_sector": f"Businesses in {detected_sector} sector may need digital services",
+            "recommended_service": "Website Development",
+            "confidence_score": 55,
+            "source_ids": [item.get("id", 0)],
+        })
+
+        if len(trends) >= 10:
+            break
+
+    print(f"[TrendAnalyzer] Deterministic fallback generated {len(trends)} trends")
+    return trends
+
+
+def _is_token_limit_error(error_str: str) -> bool:
+    """Check if an error is a token/rate limit error that can be retried with fewer items."""
+    indicators = ["413", "rate_limit", "tokens", "too large", "request too large", "tpm"]
+    return any(ind in error_str.lower() for ind in indicators)
+
+
+def analyze_trends(source_items: list[dict]) -> list[dict]:
+    """
+    LLM-1: Analyze fresh source data and return structured trends.
+
+    Input: list of source_data dicts
+    Output: list of trend analysis dicts
+
+    Handles token limits gracefully with retry and deterministic fallback.
+    """
+    if not source_items:
+        return []
+
+    print(f"[TrendAnalyzer] Fresh items found: {len(source_items)}")
+
+    # ── Attempt 1: Normal call with MAX_ITEMS_NORMAL items ──
+    source_text = _prepare_source_text(source_items, MAX_ITEMS_NORMAL)
+    prompt = _build_prompt(source_text, min(len(source_items), MAX_ITEMS_NORMAL))
+    prompt_len = len(SYSTEM_PROMPT) + len(prompt)
+    print(f"[TrendAnalyzer] Items sent to LLM: {min(len(source_items), MAX_ITEMS_NORMAL)}")
+    print(f"[TrendAnalyzer] Approx prompt char length: {prompt_len}")
+
+    try:
+        raw = call_llm(prompt=prompt, system_prompt=SYSTEM_PROMPT, model=TREND_MODEL, temperature=0.2)
+        trends = _parse_llm_result(raw)
+        if trends:
+            # Filter out any India trends that slipped through
+            trends = [t for t in trends if not is_india_market(t)]
+            print(f"[TrendAnalyzer] LLM returned {len(trends)} trends (attempt 1)")
+            return trends
+        # If LLM returned an error in JSON, check if it's a token limit
+        if '"error"' in raw and _is_token_limit_error(raw):
+            raise RuntimeError(f"Token limit error: {raw[:200]}")
+        if trends == []:
+            print("[TrendAnalyzer] LLM returned 0 trends, trying retry with fewer items...")
+            raise RuntimeError("Empty result, retrying with fewer items")
+
+    except Exception as e:
+        err_str = str(e)
+        print(f"[TrendAnalyzer] Attempt 1 failed: {err_str[:200]}")
+
+        if _is_token_limit_error(err_str):
+            # ── Attempt 2: Retry with fewer items ──
+            print(f"[TrendAnalyzer] Token limit hit, retrying with {MAX_ITEMS_RETRY} items...")
+            try:
+                source_text = _prepare_source_text(source_items, MAX_ITEMS_RETRY)
+                prompt = _build_prompt(source_text, min(len(source_items), MAX_ITEMS_RETRY))
+                prompt_len = len(SYSTEM_PROMPT) + len(prompt)
+                print(f"[TrendAnalyzer] Retry items sent: {min(len(source_items), MAX_ITEMS_RETRY)}")
+                print(f"[TrendAnalyzer] Retry prompt char length: {prompt_len}")
+
+                raw = call_llm(prompt=prompt, system_prompt=SYSTEM_PROMPT, model=TREND_MODEL, temperature=0.2)
+                trends = _parse_llm_result(raw)
+                if trends:
+                    trends = [t for t in trends if not is_india_market(t)]
+                    print(f"[TrendAnalyzer] LLM returned {len(trends)} trends (attempt 2 - retry)")
+                    return trends
+            except Exception as retry_e:
+                print(f"[TrendAnalyzer] Retry also failed: {retry_e}")
+
+    # ── Fallback: deterministic trends from source data ──
+    print("[TrendAnalyzer] LLM failed, using deterministic fallback.")
+    return _generate_deterministic_fallback(source_items)
 
 class TrendAnalyzer:
     def __init__(self):
         pass
-
-    def analyze_trends(self, news_items: List[Dict[str, Any]], config: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """
-        Parses news items to extract structured digital transformation trend signals.
-        Uses rule-based algorithmic matching with predefined B2B category-service maps.
-        """
-        logger.info(f"Analyzing {len(news_items)} news items for B2B opportunity signals...")
-        trends = []
         
-        target_service_filter = config.get("target_service")
-        
-        for idx, item in enumerate(news_items):
-            title = item.get("title", "")
-            desc = item.get("description", "")
-            text_pool = f"{title} {desc}".lower()
-            
-            # 1. Match Category
-            matched_category = "General Business"
-            for category, keywords in CATEGORIES_MAP.items():
-                if any(keyword in text_pool for keyword in keywords):
-                    matched_category = category
-                    break
-            
-            # 2. Match Geography
-            matched_geo = {"country": "Global", "state": None, "region": None}
-            for keyword, geo_data in GEOGRAPHIES.items():
-                if keyword.lower() in text_pool:
-                    matched_geo = geo_data.copy()
-                    break
-            
-            # Allow manual config overrides
-            if config.get("country"): matched_geo["country"] = config["country"]
-            if config.get("state"): matched_geo["state"] = config["state"]
-            if config.get("region"): matched_geo["region"] = config["region"]
-            
-            # 3. Match Target Service
-            matched_service = None
-            for service in TARGET_SERVICES:
-                # Look for exact service substring or partial tokens
-                tokens = service.lower().split(" ")
-                if any(t in text_pool for t in tokens if len(t) > 3):
-                    matched_service = service
-                    break
-            
-            if not matched_service:
-                # Round-robin selection based on index to keep fallback diverse
-                matched_service = TARGET_SERVICES[idx % len(TARGET_SERVICES)]
-                
-            # If user selected a specific target service, enforce it
-            if target_service_filter and target_service_filter != matched_service:
-                matched_service = target_service_filter
-                
-            # 4. Construct demand description
-            demand_signals = []
-            if "crm" in text_pool or "pipeline" in text_pool:
-                demand_signals.append("Inflow tracking problems")
-            if "phone" in text_pool or "call" in text_pool or "chat" in text_pool:
-                demand_signals.append("High phone call volume and staff shortages")
-            if "seo" in text_pool or "search" in text_pool or "organic" in text_pool:
-                demand_signals.append("Low organic web search visibility")
-            if "speed" in text_pool or "load" in text_pool or "mobile" in text_pool:
-                demand_signals.append("Slow mobile page speeds causing patient/customer churn")
-                
-            if not demand_signals:
-                demand_signals.append("Increasing customer acquisition costs and labor overheads")
-                
-            # Calculate Scores
-            trend_score = min(100, 30 + (len(demand_signals) * 15))
-            confidence_score = min(100, 40 + (len(demand_signals) * 10))
-
-            # 5. Build structured B2B trend signal
-            trend_signal = {
-                "category": matched_category,
-                "country": matched_geo["country"],
-                "state": matched_geo["state"],
-                "region": matched_geo["region"] or matched_geo["state"] or "Metropolitan Areas",
-                "target_service": matched_service,
-                "demand_signal": ", ".join(demand_signals),
-                "trend_reason": desc[:250] if len(desc) > 10 else f"Local B2B businesses in {matched_geo['country']} are actively migrating manual services to digital systems to optimize operational costs.",
-                "title": title,
-                "link": item.get("link", "https://news.google.com"),
-                "trend_score": trend_score,
-                "confidence_score": confidence_score
-            }
-            trends.append(trend_signal)
-            
-        return trends
+    def analyze_trends(self, source_items: list[dict], config: dict = None) -> list[dict]:
+        """
+        Wrapper to maintain compatibility with the service layer.
+        Delegates to the module-level analyze_trends function.
+        """
+        return analyze_trends(source_items)

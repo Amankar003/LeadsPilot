@@ -27,6 +27,13 @@ GROQ_API_KEY = get_env_var("GROQ_API_KEY", "")
 GROQ_MODEL = get_env_var("GROQ_MODEL", "llama-3.3-70b-versatile")
 SERPER_API_KEY = get_env_var("SERPER_API_KEY", "")
 SERP_API_KEY = get_env_var("SERP_API_KEY", "")
+NEWSDATA_API_KEY = get_env_var("NEWSDATA_API_KEY", "")
+
+# Dork Intelligence Engine / LLM Settings
+LLM_PROVIDER = "groq"
+TREND_MODEL = get_env_var("TREND_MODEL", "llama-3.1-8b-instant")
+DORK_MODEL = get_env_var("DORK_MODEL", "llama-3.1-8b-instant")
+DEMO_MODE = str(get_env_var("DEMO_MODE", "false")).lower() == "true"
 
 # Authentication Settings
 ADMIN_EMAIL = get_env_var("ADMIN_EMAIL", "admin@leadpilot.ai")

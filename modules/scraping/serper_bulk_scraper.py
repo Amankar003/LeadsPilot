@@ -30,8 +30,18 @@ def fetch_serper_results(query: str, page: int = 1, num: int = 10) -> List[Dict]
     }
 
     try:
+        import time
+        start_time = time.time()
+        
+        logger.info(f"[STEP 3] API Request Sent. URL: {url}, Payload: {payload}")
+        logger.info(f"[STEP 3.1] Headers (masked): {{'X-API-KEY': '{SERPER_API_KEY[:4]}...{SERPER_API_KEY[-4:]}', 'Content-Type': 'application/json'}}")
+        
         response = requests.post(url, headers=headers, json=payload, timeout=15)
         
+        elapsed = time.time() - start_time
+        logger.info(f"[STEP 4] API Response Received. Status: {response.status_code}, Time: {elapsed:.2f}s")
+        logger.info(f"[STEP 4.1] Response Body (truncated): {str(response.text)[:200]}...")
+
         if response.status_code == 401:
             logger.error(f"Invalid Serper API Key. Status: {response.status_code}")
             return []

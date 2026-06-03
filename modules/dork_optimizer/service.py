@@ -254,6 +254,8 @@ class DorkOptimizerService:
             dork_queries.append(d.dork)
             d.status = "scraped"
             
+        logger.info(f"[STEP 1] Dorks Generated/Fetched. Total queries to process: {len(dork_queries)}")
+            
         # 3. Create single pending ScrapingJob
         # Store dork queries in raw_queries (JSON) so scraper can read them.
         # Use campaign name as category for clean UI display.
@@ -270,6 +272,7 @@ class DorkOptimizerService:
         
         self.db.commit()
         logger.info(f"Successfully created pending Scraping Job {job.id} for {len(dorks)} dorks.")
+        logger.info(f"[STEP 2] Job Created. Job ID: {job.id}, Category: {job.category}")
         
         return {
             "status": "success",

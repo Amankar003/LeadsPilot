@@ -160,9 +160,12 @@ def render_campaign_card(campaign: Campaign):
                 st.button("📥 Download Generated Email CSV", disabled=True, key=f"dl_email_dis_{campaign.id}", use_container_width=True)
                 st.caption("No emails generated or no leads have emails.")
 
-        # View Leads Dropdown
         if st.session_state.get(f"show_leads_{campaign.id}", False):
             if leads:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"[STEP 7] UI Loaded. Rendered {len(leads)} leads for campaign: {campaign.campaign_name}")
+                
                 lead_data = [{"Business": l.business_name, "Email": l.email, "Phone": l.phone, "Website": l.website} for l in leads]
                 st.dataframe(pd.DataFrame(lead_data), hide_index=True, width="stretch")
             else:

@@ -495,8 +495,11 @@ def run_bulk_serper_scraping(
                 results = fetch_serper_results(query, page=page)
 
                 if not results:
+                    logger.info(f"[STEP 5] Results Parsed: 0 organic results returned for page {page}.")
                     break
 
+                logger.info(f"[STEP 5] Results Parsed: {len(results)} organic results returned for page {page}.")
+                
                 summary["raw_results_found"] += len(results)
                 summary["pages_processed"] += 1
                 
@@ -805,6 +808,7 @@ def run_bulk_serper_scraping(
                             )
 
                             logger.info(f"✅ Saved Lead ({summary['unique_leads_saved']}): {title}")
+                            logger.info(f"[STEP 6] Leads Saved. Successfully persisted lead: {title}")
                             _save_raw_record(db, job_id, campaign_id, title, link, email, phone, location, main_query, page, res, "SAVED_LEAD", "Successfully saved lead")
 
                         except Exception as e:

@@ -149,6 +149,7 @@ class ScrapingPlanner:
                 try:
                     from utils.constants import PLATFORM_SERPER_BULK
                     if job_platform == PLATFORM_SERPER_BULK:
+                        logger.info(f"[DIAGNOSTIC] Handoff to bulk_serper_runner for job {job_id}, query: {query}")
                         from modules.scraping.bulk_serper_runner import run_bulk_serper_scraping
                         run_bulk_serper_scraping(
                             db=self.db,

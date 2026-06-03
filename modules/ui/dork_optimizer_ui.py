@@ -42,7 +42,7 @@ def render_dork_optimizer():
         campaigns = campaign_repo.get_all() or []
         
         # Tabs
-        tab1, tab2 = st.tabs(["🚀 Run Opportunity Pipeline", "🎛️ Manual Dork Generator"])
+        tab1, tab2, tab3 = st.tabs(["🚀 Run Opportunity Pipeline", "🎛️ Manual Dork Generator", "🧠 Dork Intelligence Dashboard"])
         
         # ----------------------------------------------------
         # TAB 1: RUN PIPELINE
@@ -387,6 +387,13 @@ def render_dork_optimizer():
                             st.success(f"Saved {len(selected_m_dork_ids)} selected dorks to local database history!")
                             
                     st.info("💡 Hint: After scraping, generated leads are automatically checked for quality, enrichment details, and will become fully available inside the CRM and MailForge Outreach Suite.")
+                    
+        # ----------------------------------------------------
+        # TAB 3: DORK INTELLIGENCE DASHBOARD
+        # ----------------------------------------------------
+        with tab3:
+            from modules.ui.dork_intelligence_ui import render_dork_intelligence_dashboard
+            render_dork_intelligence_dashboard()
                     
     except Exception as e:
         logger.error(f"Error rendering Dork Optimizer UI: {e}", exc_info=True)

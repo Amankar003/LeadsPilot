@@ -629,6 +629,76 @@ class GeneratedDork(Base):
     opportunity = relationship("DorkOpportunity", back_populates="dorks")
 
 
+# =============================================================================
+# STANDALONE DORK INTELLIGENCE ENGINE PARITY MODELS
+# =============================================================================
+
+class DorkSourceData(Base):
+    __tablename__ = "dork_source_data"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source_name = Column(String, nullable=True)
+    source_type = Column(String, nullable=True)
+    title = Column(String, nullable=True)
+    url = Column(String, nullable=True)
+    raw_text = Column(Text, nullable=True)
+    country = Column(String, nullable=True)
+    region = Column(String, nullable=True)
+    keyword = Column(String, nullable=True)
+    published_at = Column(String, nullable=True)
+    fetched_at = Column(DateTime, default=datetime.utcnow, index=True)
+    source_hash = Column(String, unique=True, index=True)
+    status = Column(String, default="fresh")
+
+
+class DorkTrendAnalysis(Base):
+    __tablename__ = "dork_trend_analysis"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    analysis_date = Column(String, default=lambda: datetime.utcnow().strftime("%Y-%m-%d"), index=True)
+    trend_name = Column(String, nullable=True)
+    country = Column(String, nullable=True)
+    region = Column(String, nullable=True)
+    sector = Column(String, nullable=True)
+    domain = Column(String, nullable=True)
+    business_requirements = Column(Text, nullable=True)
+    why_this_region = Column(Text, nullable=True)
+    why_this_sector = Column(Text, nullable=True)
+    recommended_service = Column(String, nullable=True)
+    confidence_score = Column(Integer, default=0)
+    source_ids = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class DorkRecommendation(Base):
+    __tablename__ = "dork_recommendations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    recommendation_date = Column(String, default=lambda: datetime.utcnow().strftime("%Y-%m-%d"), index=True)
+    trend_id = Column(Integer, nullable=True)
+    trend_name = Column(String, nullable=True)
+    country = Column(String, nullable=True)
+    region = Column(String, nullable=True)
+    sector = Column(String, nullable=True)
+    domain = Column(String, nullable=True)
+    recommended_service = Column(String, nullable=True)
+    keywords = Column(Text, nullable=True)
+    dorks = Column(Text, nullable=True)
+    urls = Column(Text, nullable=True)
+    why_this_dork = Column(Text, nullable=True)
+    opportunity_score = Column(Integer, default=0)
+    status = Column(String, default="ready")
+    fingerprint = Column(String, unique=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class DorkPipelineState(Base):
+    __tablename__ = "dork_pipeline_state"
+
+    key = Column(String, primary_key=True)
+    value = Column(String, nullable=True)
+
+
 def get_or_create_default_user(db):
     user = db.query(User).filter(User.id == "default-user").first()
     if user:

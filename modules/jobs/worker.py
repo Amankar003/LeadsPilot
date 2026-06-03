@@ -52,6 +52,7 @@ class BackgroundWorker:
                 if job:
                     camp_name = job.campaign.campaign_name if job.campaign else f"ID:{job.campaign_id[:8]}"
                     logger.info(f"Worker picked up pending job: {job.id} (Campaign: {camp_name})")
+                    logger.info(f"[DIAGNOSTIC] Worker picked up job {job.id} and initializing ScrapingPlanner")
                     planner = ScrapingPlanner(db)
                     planner.execute_job(job.id)
             except Exception as e:
