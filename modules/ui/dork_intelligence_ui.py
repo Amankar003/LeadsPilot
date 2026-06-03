@@ -1,13 +1,17 @@
 import streamlit as st
 import pandas as pd
+from config.database import SessionLocal
+from modules.dork_optimizer.service import DorkOptimizerService
 from modules.dork_optimizer.db_adapter import (
     get_today_source_data,
-    get_today_trends,
     get_today_recommendations,
     get_pipeline_status,
     get_source_summary
 )
 from modules.dork_optimizer.services.pipeline import run_pipeline
+from modules.ui.components.opportunity_card import render_opportunity_card
+from modules.ui.components.dork_list import render_dork_list
+from modules.ui.components.campaign_selector import render_campaign_selector
 
 def render_dork_intelligence_dashboard():
     st.markdown("## 🧠 Dork Intelligence Engine")
@@ -26,54 +30,46 @@ def render_dork_intelligence_dashboard():
             except Exception as e:
                 st.error(f"Pipeline failed: {e}")
 
-    section = st.radio("Dashboard Sections", ["📊 Market Trends", "📌 Dork Recommendations", "🌐 Source Data"], horizontal=True)
-
-    if section == "📊 Market Trends":
-        st.markdown("### Today's Trend Analysis")
-        trends = get_today_trends()
-        if not trends:
-            st.info("No trends analyzed today.")
-        else:
-            for t in trends:
-                with st.expander(f"{t['trend_name']} - {t['country']} (Score: {t['confidence_score']})"):
-                    st.write(f"**Region/Sector:** {t['region']} / {t['sector']}")
-                    st.write(f"**Why this region:** {t['why_this_region']}")
-                    st.write(f"**Why this sector:** {t['why_this_sector']}")
-                    st.write(f"**Recommended Service:** {t['recommended_service']}")
-                    if t.get("business_requirements"):
-                        st.write("**Requirements:**")
-                        for req in t['business_requirements']:
-                            st.write(f"- {req}")
-
-    elif section == "📌 Dork Recommendations":
-        st.markdown("### High-Value Dork Recommendations")
-        recs = get_today_recommendations()
-        if not recs:
-            st.info("No recommendations generated today.")
-        else:
-            # We will show them in a DataFrame for easy copy-pasting
-            rec_data = []
-            for r in recs:
-                for d in r.get('dorks', []):
-                    rec_data.append({
-                        "Trend": r['trend_name'],
-                        "Country": r['country'],
-                        "Service": r['recommended_service'],
-                        "Dork": d,
-                        "Score": r['opportunity_score']
-                    })
+    st.markdown("---")
+    st.markdown("### 🎯 High-Value Intelligence Opportunities")
+    
+    recs = get_today_recommendations()
+    if not recs:
+        st.info("No recommendations generated today. Run the pipeline above to gather intelligence.")
+    else:
+        db = SessionLocal()
+        try:
+            service = DorkOptimizerService(db)
             
-            if rec_data:
-                df = pd.DataFrame(rec_data)
-                st.dataframe(df, use_container_width=True)
-                
-                st.markdown("#### 📋 Copy All Generated Dorks")
-                all_dorks = "\n".join([r['Dork'] for r in rec_data])
-                st.code(all_dorks, language="text")
-                st.info("Hover over the block above and click the copy icon in the top right to copy all dorks.")
+            for idx, r in enumerate(recs):
+                with st.container(border=True):
+                    # 1. Opportunity Context
+                    opp_data = {
+                        "category": r.get("trend_name", "Unknown Trend"),
+                        "region": r.get("region"),
+                        "country": r.get("country"),
+                        "trend_summary": f"Signal identified for {r.get('sector', 'various')} sector.",
+                        "opportunity_reason": "High demand indicated by local market shifts.",
+                        "target_service": r.get("recommended_service", "Any"),
+                        "score": r.get("opportunity_score", 50)
+                    }
+                    render_opportunity_card(opp_data)
+                    
+                    # 2. Generated Dorks & Copy Controls
+                    dorks = r.get('dorks', [])
+                    selected_dork_ids = render_dork_list(dorks, opp_id=f"intel_{r.get('id', idx)}")
+                    
+                    # 3. Campaign Selection & Actions
+                    st.markdown("---")
+                    render_campaign_selector(db, service, selected_dork_ids, opp_id=f"intel_{r.get('id', idx)}")
+                    
+        except Exception as e:
+            st.error(f"Error rendering intelligence dashboard: {e}")
+        finally:
+            db.close()
 
-    elif section == "🌐 Source Data":
-        st.markdown("### Raw Aggregated Sources")
+    st.markdown("---")
+    with st.expander("🌐 View Raw Aggregated Sources"):
         summary = get_source_summary()
         st.write(f"**Total Today:** {summary['total_today']}")
         st.write(f"**By Source:** {summary['by_source']}")

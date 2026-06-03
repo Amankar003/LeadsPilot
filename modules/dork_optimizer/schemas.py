@@ -1,24 +1,25 @@
-from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
+from typing import List, Optional
 
-class DorkOpportunitySchema(BaseModel):
-    country: Optional[str] = None
-    state: Optional[str] = None
-    region: Optional[str] = None
-    category: str
-    trend_summary: str
-    opportunity_reason: str
-    suggested_offer: str
-    target_service: str
-    score: int = Field(default=0, ge=0, le=100)
-    source_articles: List[Dict[str, Any]] = Field(default_factory=list)
+class Trend(BaseModel):
+    trend_name: str = Field(default="Unknown Trend", description="Short descriptive trend title")
+    category: str = Field(default="General", description="Industry or sector category")
+    description: str = Field(default="No description provided.", description="Summary of the trend")
+    opportunity_score: int = Field(default=50, ge=0, le=100, description="Score from 0-100 indicating opportunity strength")
+    business_impact: str = Field(default="Unknown impact", description="How this impacts B2B businesses")
+    target_market: str = Field(default="Global", description="The overarching target market")
+    
+    # Fields kept for OpportunityFinder logic, with safe defaults
+    target_service: str = Field(default="Website Development", description="Recommended 3FI service")
+    country: str = Field(default="", description="Target country")
+    region: str = Field(default="", description="Target city/region")
+    
+    # Allow fallback for old 'sector' key if LLM hallucinates it instead of 'category'
+    sector: Optional[str] = Field(default=None, exclude=True)
+    
+    def model_post_init(self, __context) -> None:
+        if self.sector and self.category == "General":
+            self.category = self.sector
 
-class GeneratedDorkSchema(BaseModel):
-    dork: str
-    dork_type: str  # business_discovery, contact_page, email_discovery, phone_whatsapp, low_digital_presence, service_need
-    intent: str
-    quality_score: int = Field(default=0, ge=0, le=100)
-    country: Optional[str] = None
-    region: Optional[str] = None
-    category: Optional[str] = None
-    target_service: Optional[str] = None
+class TrendList(BaseModel):
+    trends: List[Trend] = Field(default_factory=list)

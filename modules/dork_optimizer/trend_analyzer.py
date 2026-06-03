@@ -85,21 +85,19 @@ Return a JSON object ONLY with a "trends" key containing the list of campaign op
   "trends": [
     {{
       "trend_name": "Short descriptive trend title",
+      "category": "tourism / real estate / healthcare / ecommerce / ai digital transformation / manufacturing / education / b2b services",
+      "description": "Summary of the market signal and why businesses in this sector need help",
+      "opportunity_score": 75,
+      "business_impact": "How this directly impacts the target market's revenue or operations",
+      "target_market": "The overarching target market (e.g., North American Healthcare)",
+      "target_service": "One service from 3FI's list that fits best",
       "country": "Country from source data",
-      "region": "City/region from source data",
-      "sector": "tourism / real estate / healthcare / ecommerce / ai digital transformation / manufacturing / education / b2b services / wedding events / immigration",
-      "domain": "Specific business domain affected",
-      "business_requirements": ["requirement1", "requirement2"],
-      "why_this_region": "Why this region is high-potential right now",
-      "why_this_sector": "Why businesses in this sector need help",
-      "recommended_service": "One service from 3FI's list that fits best",
-      "confidence_score": 75,
-      "source_ids": [1, 2]
+      "region": "City/region from source data"
     }}
   ]
 }}
 
-confidence_score rules:
+opportunity_score rules:
 - 90-100: Multiple strong live sources confirm this trend
 - 70-89: Clear signal from at least 1 source
 - 50-69: Weak or indirect signal
@@ -174,16 +172,14 @@ def _generate_deterministic_fallback(source_items: list[dict]) -> list[dict]:
 
         trends.append({
             "trend_name": _truncate(title, 100),
+            "category": detected_sector,
+            "description": f"Signal detected from live source data for {country}. Businesses in {detected_sector} may need digital services.",
+            "opportunity_score": 55,
+            "business_impact": "Potential efficiency gains and market reach expansion.",
+            "target_market": f"{country} {detected_sector}",
+            "target_service": "Website Development",
             "country": country,
-            "region": region,
-            "sector": detected_sector,
-            "domain": detected_sector,
-            "business_requirements": ["Website Development", "Local SEO"],
-            "why_this_region": f"Signal detected from live source data for {country}",
-            "why_this_sector": f"Businesses in {detected_sector} sector may need digital services",
-            "recommended_service": "Website Development",
-            "confidence_score": 55,
-            "source_ids": [item.get("id", 0)],
+            "region": region
         })
 
         if len(trends) >= 10:

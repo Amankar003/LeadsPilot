@@ -9,28 +9,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-@st.dialog("Create New Campaign")
-def create_campaign_modal(db):
-    from datetime import datetime
-    from modules.database.models import get_or_create_default_user
-    
-    st.markdown("All scraped data must be linked to a campaign.")
-    default_name = f"Auto Campaign - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-    new_camp_name = st.text_input("Campaign Name", value=default_name)
-    new_camp_source = st.selectbox("Source", ["Manual Dork Generator", "Auto Dork Optimizer"])
-    
-    if st.button("Create & Continue", type="primary"):
-        user = get_or_create_default_user(db)
-        new_camp = CampaignRepository(db).create(
-            user_id=user.id,
-            campaign_name=new_camp_name,
-            category=new_camp_source,
-            location="Global",
-            platform="serper_bulk",
-            status="PENDING"
-        )
-        st.session_state["newly_created_campaign_id"] = new_camp.id
-        st.rerun()
+from modules.ui.components.campaign_creator import create_campaign_modal
+from modules.ui.components.opportunity_card import render_opportunity_card
+from modules.ui.components.dork_list import render_dork_list
+from modules.ui.components.campaign_selector import render_campaign_selector
 
 def render_dork_optimizer():
     page_header("🔍", "Dork Optimizer", "Proactively discover rising B2B trends and compile hyper-targeted search dorks to scrape premium leads.")
@@ -130,104 +112,27 @@ def render_dork_optimizer():
                     st.info("No matching trends discovered. Try broadening your scope filters.")
                 else:
                     for opp_idx, opp in enumerate(opportunities):
-                        # Card aesthetic
-                        score_color = "green" if opp.score >= 80 else ("orange" if opp.score >= 60 else "red")
-                        
-                        st.markdown(f"""
-                        <div style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 20px; background-color: #fcfcfc;">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <h4 style="margin: 0; color: #1e3a8a;">💼 {opp.category} Opportunities in {opp.region or opp.country}</h4>
-                                <span style="background-color: {score_color}; color: white; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">
-                                    Score: {opp.score}/100
-                                </span>
-                            </div>
-                            <p style="margin-top: 10px; font-size: 14px;"><strong>Target Pitch Service:</strong> <span style="background-color: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-size: 12px;">{getattr(opp, "target_service", "Not specified")}</span></p>
-                            <p style="font-size: 14px; color: #475569;"><strong>Market Trend Summary:</strong> {opp.trend_summary}</p>
-                            <p style="font-size: 14px; color: #475569;"><strong>Opportunity Reason:</strong> {opp.opportunity_reason}</p>
-                            <p style="font-size: 14px; font-weight: 500; color: #0f172a;"><strong>Suggested Offer:</strong> {opp.suggested_offer}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        opp_data = {
+                            "category": opp.category,
+                            "region": opp.region,
+                            "country": opp.country,
+                            "trend_summary": opp.trend_summary,
+                            "opportunity_reason": opp.opportunity_reason,
+                            "target_service": getattr(opp, "target_service", "Not specified"),
+                            "suggested_offer": opp.suggested_offer,
+                            "score": opp.score
+                        }
+                        render_opportunity_card(opp_data)
                         
                         # Load generated dorks for this opportunity
                         from modules.database.models import GeneratedDork
                         opp_dorks = db.query(GeneratedDork).filter(GeneratedDork.opportunity_id == opp.id).all()
                         
-                        if opp_dorks:
-                            dork_data = []
-                            for d in opp_dorks:
-                                dork_data.append({
-                                    "Select": True,
-                                    "Dork ID": d.id,
-                                    "Dork Query": d.dork,
-                                    "Type": d.dork_type,
-                                    "Quality": f"⭐ {d.quality_score}"
-                                })
-                                
-                            df_opp = pd.DataFrame(dork_data)
-                            df_opp["Select"] = df_opp["Select"].astype(bool)
-                            df_opp = make_dataframe_arrow_compatible(df_opp)
-                            
-                            edited_df = st.data_editor(
-                                df_opp,
-                                hide_index=True,
-                                key=f"opp_editor_{opp_idx}",
-                                column_config={
-                                    "Select": st.column_config.CheckboxColumn("Select", default=True),
-                                    "Dork ID": st.column_config.TextColumn("Dork ID", disabled=True),
-                                    "Dork Query": st.column_config.TextColumn("Dork Query", disabled=True),
-                                    "Type": st.column_config.TextColumn("Type", disabled=True),
-                                    "Quality": st.column_config.TextColumn("Quality", disabled=True),
-                                }
-                            )
-                            
-                            selected_dork_ids = edited_df[edited_df["Select"] == True]["Dork ID"].tolist()
-                            
-                            # Campaign dispatcher
-                            st.markdown("##### ⚙️ Target Campaign Selection")
-                            
-                            if st.session_state.get("newly_created_campaign_id"):
-                                # Ensure campaigns list is refreshed
-                                campaigns = campaign_repo.get_all() or []
-                                
-                            sc1, sc2 = st.columns([2, 1])
-                            with sc1:
-                                if campaigns:
-                                    # Select the newly created campaign if present
-                                    default_index = 0
-                                    new_id = st.session_state.get("newly_created_campaign_id")
-                                    if new_id:
-                                        for i, c in enumerate(campaigns):
-                                            if c.id == new_id:
-                                                default_index = i
-                                                break
-                                                
-                                    selected_camp = st.selectbox(
-                                        "Select Target Campaign",
-                                        options=[c.id for c in campaigns],
-                                        format_func=lambda x: next(c.campaign_name for c in campaigns if c.id == x),
-                                        index=default_index,
-                                        key=f"opp_camp_{opp_idx}"
-                                    )
-                                else:
-                                    selected_camp = None
-                                    st.info("No campaigns exist. Create one to continue.")
-                                    
-                                if st.button("➕ Create New Campaign", key=f"opp_create_btn_{opp_idx}"):
-                                    create_campaign_modal(db)
-                                    
-                            with sc2:
-                                st.write("") # Spacing
-                                st.write("") # Spacing
-                                if selected_camp and st.button("Send Dorks to Scraper", key=f"opp_send_btn_{opp_idx}", use_container_width=True, type="primary"):
-                                    if not selected_dork_ids:
-                                        st.warning("Please select at least one dork query.")
-                                    else:
-                                        with st.spinner("Pushing job to database worker..."):
-                                            scraper_res = service.send_dorks_to_scraper(selected_dork_ids, selected_camp)
-                                            st.success(f"🚀 Scraping Job {scraper_res['job_id']} queued! The background worker will pick it up automatically within 5 seconds. Generated leads will automatically flow to AI Business Audit and MailForge.")
-                        else:
-                            st.write("No dorks compiled for this opportunity.")
-                            
+                        selected_dork_ids = render_dork_list(opp_dorks, opp_id=f"opp_{opp_idx}")
+                        
+                        # Campaign dispatcher
+                        render_campaign_selector(db, service, selected_dork_ids, opp_id=f"opp_{opp_idx}")
+                        
                         st.markdown("---")
                         
         # ----------------------------------------------------
