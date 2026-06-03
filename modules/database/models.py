@@ -75,6 +75,14 @@ class ScrapingJob(Base):
     total_skipped = Column(Integer, default=0)
     total_failed = Column(Integer, default=0)
     
+    # Discovery Overhaul Stats
+    total_queries_processed = Column(Integer, default=0)
+    unique_domains_found = Column(Integer, default=0)
+    websites_crawled = Column(Integer, default=0)
+    emails_found = Column(Integer, default=0)
+    valid_emails = Column(Integer, default=0)
+    rejected_leads = Column(Integer, default=0)
+    
     error_message = Column(String, nullable=True)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
@@ -124,6 +132,12 @@ class Lead(Base):
     status = Column(String, default="NEW_LEAD")
     raw_data = Column(JSON, default=dict)
     
+    # SERP Intelligence
+    serp_page = Column(Integer, nullable=True)
+    serp_position = Column(Integer, nullable=True)
+    source_query = Column(String, nullable=True)
+    discovery_timestamp = Column(DateTime, default=datetime.utcnow)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -157,6 +171,11 @@ class RawScrapedRecord(Base):
     category = Column(String, nullable=True)
     page = Column(String, nullable=True)
     source = Column(String, nullable=True)
+    
+    # SERP Intelligence
+    serp_page = Column(Integer, nullable=True)
+    serp_position = Column(Integer, nullable=True)
+    source_query = Column(String, nullable=True)
     
     raw_data = Column(JSON, default=dict)
     
@@ -290,6 +309,7 @@ class AnalysisReport(Base):
     pain_points_json = Column(JSON, default=list)
     recommended_services_json = Column(JSON, default=list)
     ai_report_json = Column(JSON, default=dict)
+    sales_intelligence_json = Column(JSON, default=dict)  # Sales Intelligence Layer output
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -576,6 +596,8 @@ class DorkOpportunity(Base):
     opportunity_reason = Column(Text, nullable=True)
     suggested_offer = Column(Text, nullable=True)
     score = Column(Integer, default=0)
+    trend_score = Column(Integer, default=0)
+    confidence_score = Column(Integer, default=0)
     source_articles = Column(JSON, default=list)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -592,6 +614,8 @@ class GeneratedDork(Base):
     dork = Column(String, nullable=False)
     dork_type = Column(String, nullable=True)  # business_discovery, contact_page, email_discovery, phone_whatsapp, low_digital_presence, service_need
     quality_score = Column(Integer, default=0)
+    trend_score = Column(Integer, default=0)
+    confidence_score = Column(Integer, default=0)
     intent = Column(String, nullable=True)
     country = Column(String, nullable=True)
     state = Column(String, nullable=True)

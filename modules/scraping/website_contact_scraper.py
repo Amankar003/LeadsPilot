@@ -45,7 +45,7 @@ def scrape_contact_info(url: str) -> dict:
 
     try:
         # Task 7: Use verify=True (default)
-        response = requests.get(url, headers=headers, timeout=12, verify=True)
+        response = requests.get(url, headers=headers, timeout=15, verify=True)
         
         # Task 6: Handle 403 Forbidden
         if response.status_code in [403, 401, 400]:
@@ -65,23 +65,33 @@ def scrape_contact_info(url: str) -> dict:
         info = _extract_from_html(html, soup, url)
         result.update(info)
 
-        # 3. Look for contact page
-        contact_page_url = _find_contact_page(soup, url)
-        if contact_page_url and contact_page_url != url:
-            result["contact_page"] = contact_page_url
-            try:
-                # First check if the contact page itself is a social link (unlikely but safe)
-                if should_scrape_website(contact_page_url):
-                    c_response = requests.get(contact_page_url, headers=headers, timeout=8, verify=True)
-                    if c_response.status_code == 200:
-                        c_info = _extract_from_html(c_response.text, BeautifulSoup(c_response.text, "html.parser"), contact_page_url)
-                        # Merge lists
+        # 3. Look for subpages
+        subpages = _find_subpages(soup, url)
+        if subpages:
+            result["contact_page"] = subpages[0]  # For legacy compatibility
+            
+            import concurrent.futures
+            
+            def fetch_subpage(sub_url):
+                try:
+                    if should_scrape_website(sub_url):
+                        c_resp = requests.get(sub_url, headers=headers, timeout=15, verify=True)
+                        if c_resp.status_code == 200:
+                            c_soup = BeautifulSoup(c_resp.text, "html.parser")
+                            return _extract_from_html(c_resp.text, c_soup, sub_url)
+                except Exception:
+                    pass
+                return None
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(subpages))) as executor:
+                future_to_url = {executor.submit(fetch_subpage, u): u for u in subpages}
+                for future in concurrent.futures.as_completed(future_to_url):
+                    c_info = future.result()
+                    if c_info:
                         result["emails"] = list(set(result["emails"] + c_info["emails"]))
                         result["phones"] = list(set(result["phones"] + c_info["phones"]))
                         result["social_links"] = list(set(result["social_links"] + c_info["social_links"]))
                         result["whatsapp_links"] = list(set(result["whatsapp_links"] + c_info["whatsapp_links"]))
-            except:
-                pass
 
         # 4. Final cleaning
         result["scraped_text_snippet"] = soup.get_text()[:500].strip().replace("\n", " ")
@@ -130,6 +140,14 @@ def _extract_from_html(html: str, soup: BeautifulSoup, base_url: str) -> dict:
         for e in emails
         if not e.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'))
     ]
+
+    # Extract emails from mailto links
+    for a in soup.find_all('a', href=True):
+        href = a['href']
+        if href.lower().startswith('mailto:'):
+            email_part = href[7:].split('?')[0].strip()
+            if email_part and not email_part.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp')):
+                emails.append(email_part.lower())
 
     # -------------------------------
     # 2. Extract Phone Numbers
@@ -233,12 +251,22 @@ def _extract_from_html(html: str, soup: BeautifulSoup, base_url: str) -> dict:
         "whatsapp_links": whatsapp_links
     }
 
-def _find_contact_page(soup: BeautifulSoup, base_url: str) -> str:
-    """Finds potential contact page link."""
-    contact_keywords = ['contact', 'about', 'get in touch', 'reach us', 'support']
+def _find_subpages(soup: BeautifulSoup, base_url: str, max_pages: int = 5) -> list[str]:
+    """Finds potential subpages like contact, about, team, privacy, etc."""
+    keywords = ['contact', 'about', 'get in touch', 'reach us', 'support', 'team', 'company', 'privacy']
+    found_urls = set()
+    
     for a in soup.find_all('a', href=True):
         text = a.get_text().lower()
         href = a['href'].lower()
-        if any(kw in text for kw in contact_keywords) or any(kw in href for kw in contact_keywords):
-            return urljoin(base_url, a['href'])
-    return ""
+        if any(kw in text for kw in keywords) or any(kw in href for kw in keywords):
+            full_url = urljoin(base_url, a['href'])
+            # Basic normalization to avoid anchors like #contact
+            full_url = full_url.split('#')[0]
+            if full_url != base_url and full_url.startswith("http"):
+                found_urls.add(full_url)
+                
+        if len(found_urls) >= max_pages:
+            break
+            
+    return list(found_urls)

@@ -151,6 +151,23 @@ def _execute_job(job_id: str):
             db.rollback()
             logger.error(f"Failed to mark job as COMPLETED {job.id}: {e}")
 
+        # 4.5. Generate and store Sales Intelligence
+        try:
+            from modules.ai.sales_intelligence_generator import generate_sales_intelligence
+            
+            db.refresh(report)
+            sales_intel = generate_sales_intelligence(report, lead)
+            
+            # Store on the report if the column exists
+            if hasattr(report, 'sales_intelligence_json'):
+                report.sales_intelligence_json = sales_intel
+                db.commit()
+                logger.info(f"Saved sales intelligence for report {report.id}")
+            else:
+                logger.warning("sales_intelligence_json column not found on AnalysisReport — skipping storage")
+        except Exception as e:
+            logger.error(f"Failed to generate/store sales intelligence for report {getattr(report, 'id', 'unknown')}: {e}")
+
         # 5. Auto-generate outreach and save CRM draft (best-effort)
         try:
             from modules.analysis.outreach_generator import generate_outreach

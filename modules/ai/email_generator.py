@@ -95,18 +95,52 @@ class EmailGenerator:
             "email": lead_data.get("email", "N/A")
         }
 
-        # Fallback Mode is naturally active since no intelligence analysis report is provided directly
-        lead_analysis_text = "[NO LEAD INTELLIGENCE AND ANALYSIS AVAILABLE - FALLBACK OUTREACH MODE IS ACTIVE]\n\n" \
-                             "Since no technical audit or intelligence is available, you must write a safe general outreach email based ONLY on the available RAW LEAD DATA.\n" \
-                             "Do NOT invent any technical problems, poor mobile/SEO experience, or speed issues.\n\n" \
-                             "Use one of the following safe fallback angles depending on the lead category and raw data:\n" \
-                             "- If the website is missing: Pitch a clean, professional website and a seamless online enquiry flow.\n" \
-                             "- If rating/reviews are available (e.g. high rating): Focus on leveraging their existing trust and local reputation to capture even more digital enquiries.\n" \
-                             "- If school/college: Focus on admission enquiry handling, parent communication, and website usability.\n" \
-                             "- If clinic/hospital: Focus on appointment enquiry handling, patient trust, and seamless booking.\n" \
-                             "- If restaurant/cafe: Focus on online bookings, order enquiry flow, and guest experience.\n" \
-                             "- If salon/spa: Focus on appointment booking, local visibility, and repeat customer follow-ups.\n" \
-                             "- If only name/category/location are available: Focus on general digital discoverability and enquiry handling."
+        # Build a minimal Sales Intelligence object from raw lead data (fallback mode)
+        has_website = bool(lead_data.get("website")) and lead_data.get("website", "").lower() not in ("no website found", "n/a", "")
+        
+        # Construct fallback sales intelligence
+        fallback_intel = {
+            "business_summary": f"{cleaned_name} is a {inferred_cat} business.",
+            "strong_points": [],
+            "personalization_hooks": [f"operates in the {inferred_cat} space"],
+            "top_observations": [],
+            "conversion_gaps": [],
+            "trust_gaps": [],
+            "seo_gaps": [],
+            "business_impact_summary": "",
+            "best_pitch_angle": "",
+            "recommended_service": "",
+            "recommended_cta": "Would you be open to a quick 5-minute review?"
+        }
+        
+        # Populate based on available data
+        rating = lead_data.get("rating")
+        if rating and str(rating) != "N/A":
+            try:
+                if float(rating) >= 4.0:
+                    fallback_intel["strong_points"].append(f"strong customer rating ({rating} stars)")
+                    fallback_intel["personalization_hooks"].append(f"strong local reputation with {rating}-star rating")
+            except (ValueError, TypeError):
+                pass
+        
+        if has_website:
+            fallback_intel["strong_points"].append("has an existing website")
+            fallback_intel["best_pitch_angle"] = "Improve the enquiry and conversion flow so visitors can contact or book easily"
+            fallback_intel["recommended_service"] = "Website Optimization & Lead Capture"
+        else:
+            fallback_intel["conversion_gaps"].append("no website to capture online enquiries")
+            fallback_intel["best_pitch_angle"] = "Help the business establish a professional online presence"
+            fallback_intel["recommended_service"] = "Website Development & Local SEO"
+        
+        if not fallback_intel["strong_points"]:
+            fallback_intel["strong_points"].append("established local presence")
+        
+        fallback_intel["business_impact_summary"] = (
+            f"Potential customers looking for {inferred_cat} services may not be finding "
+            f"{cleaned_name} online, or may find it hard to enquire quickly."
+        )
+
+        lead_analysis_text = json.dumps(fallback_intel, indent=2, ensure_ascii=False)
 
         sender_info = sender or {}
         sender_name = sender_info.get("sender_name", settings.SENDER_NAME)
@@ -118,7 +152,10 @@ class EmailGenerator:
             lead_analysis=lead_analysis_text,
             sender_name=sender_name,
             sender_role=sender_role,
-            agency_website=agency_website
+            agency_website=agency_website,
+            serp_page="Unknown",
+            serp_position="Unknown",
+            source_query="Unknown"
         )
 
         result = self.ai.generate_json(prompt)

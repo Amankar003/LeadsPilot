@@ -362,7 +362,17 @@ def build_contact_key(email: str | None, phone: str | None) -> str | None:
     return "|".join(parts)
 
 
-def _save_raw_record(db: Session, job_id: str, campaign_id: str, title: str, link: str, email: str, phone: str, location: str, main_query: str, page: str, res: dict, status: str, skip_reason: str):
+def _save_raw_record(db: Session, job_id: str, campaign_id: str, title: str, link: str, email: str, phone: str, location: str, main_query: str, page: str, res: dict, status: str, skip_reason: str, serp_page: int = None, serp_position: int = None, source_query: str = None):
+    if serp_page is None:
+        try:
+            serp_page = int(page)
+        except:
+            pass
+    if serp_position is None and isinstance(res, dict):
+        serp_position = res.get("position")
+    if source_query is None:
+        source_query = main_query
+        
     try:
         raw_record = RawScrapedRecord(
             job_id=job_id,
@@ -379,7 +389,10 @@ def _save_raw_record(db: Session, job_id: str, campaign_id: str, title: str, lin
             source="serper_bulk",
             raw_data=res,
             status=status,
-            skip_reason=skip_reason
+            skip_reason=skip_reason,
+            serp_page=serp_page,
+            serp_position=serp_position,
+            source_query=source_query
         )
         db.add(raw_record)
         db.commit()
@@ -467,8 +480,11 @@ def run_bulk_serper_scraping(
                     (q_idx / len(queries)) * 0.5
                 )
 
-            # 3. Loop through pages
-            for page in range(1, max_pages_per_query + 1):
+            # 3. Loop through pages infinitely
+            page = 1
+            consecutive_duplicate_pages = 0
+            
+            while True:
                 if is_stopped():
                     break
 
@@ -483,6 +499,8 @@ def run_bulk_serper_scraping(
 
                 summary["raw_results_found"] += len(results)
                 summary["pages_processed"] += 1
+                
+                new_urls_in_page = 0
 
                 # Update job stats in DB for scraping count
                 job_repo.update_status(
@@ -513,7 +531,8 @@ def run_bulk_serper_scraping(
                     if link in seen_urls:
                         _save_raw_record(db, job_id, campaign_id, title, link, None, None, location, main_query, page, res, "DUPLICATE", "Duplicate URL in this run")
                         continue
-
+                        
+                    new_urls_in_page += 1
                     seen_urls.add(link)
                     snippet = res.get("snippet", "")
                     domain = get_domain(link)
@@ -745,6 +764,9 @@ def run_bulk_serper_scraping(
                             "has_website": has_website,
                             "rating": safe_float(res.get("rating")),
                             "reviews_count": safe_int(res.get("ratingCount") or res.get("reviews") or res.get("reviewsCount")),
+                            "serp_page": page,
+                            "serp_position": res.get("position"),
+                            "source_query": main_query,
                             "raw_data": {
                                 **res,
                                 **contact_info,
@@ -797,6 +819,16 @@ def run_bulk_serper_scraping(
                         elif not has_phone: status = "MISSING_PHONE"
                         _save_raw_record(db, job_id, campaign_id, title, link, email, phone, location, main_query, page, res, status, "Missing contact info")
 
+                if new_urls_in_page == 0:
+                    consecutive_duplicate_pages += 1
+                    logger.info(f"Page {page} yielded 0 new URLs. Consecutive duplicate pages: {consecutive_duplicate_pages}")
+                    if consecutive_duplicate_pages >= 2:
+                        logger.info("Stopping pagination: 2 consecutive pages with 100% duplicate URLs.")
+                        break
+                else:
+                    consecutive_duplicate_pages = 0
+
+                page += 1
                 time.sleep(1)
 
             summary["queries_processed"] += 1

@@ -98,6 +98,10 @@ class TrendAnalyzer:
             if not demand_signals:
                 demand_signals.append("Increasing customer acquisition costs and labor overheads")
                 
+            # Calculate Scores
+            trend_score = min(100, 30 + (len(demand_signals) * 15))
+            confidence_score = min(100, 40 + (len(demand_signals) * 10))
+
             # 5. Build structured B2B trend signal
             trend_signal = {
                 "category": matched_category,
@@ -108,7 +112,9 @@ class TrendAnalyzer:
                 "demand_signal": ", ".join(demand_signals),
                 "trend_reason": desc[:250] if len(desc) > 10 else f"Local B2B businesses in {matched_geo['country']} are actively migrating manual services to digital systems to optimize operational costs.",
                 "title": title,
-                "link": item.get("link", "https://news.google.com")
+                "link": item.get("link", "https://news.google.com"),
+                "trend_score": trend_score,
+                "confidence_score": confidence_score
             }
             trends.append(trend_signal)
             

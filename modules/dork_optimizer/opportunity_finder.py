@@ -77,6 +77,8 @@ class OpportunityFinder:
                 "suggested_offer": suggested_offer,
                 "target_service": target_service,
                 "score": score,
+                "trend_score": trend.get("trend_score", 0),
+                "confidence_score": trend.get("confidence_score", 0),
                 "source_articles": [
                     {
                         "title": trend["title"],

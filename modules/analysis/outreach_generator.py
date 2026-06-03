@@ -279,7 +279,7 @@ def expand_services(pain_points: list) -> list:
                     break
     return services
 
-def validate_email_quality(email_body: str, cleaned_name: str, has_report: bool, normalized_pain_points: list, selected_services: list) -> tuple[bool, str]:
+def validate_email_quality(email_body: str, cleaned_name: str, has_report: bool, sales_intelligence: dict = None) -> tuple[bool, str]:
     """Validates the generated email body to ensure high copywriting quality."""
     if not email_body:
         return False, "Empty email body"
@@ -295,7 +295,7 @@ def validate_email_quality(email_body: str, cleaned_name: str, has_report: bool,
     if "sector" in e_lower and ("site:" in e_lower or "gmail" in e_lower):
         return False, "Contains raw sector query parameters"
         
-    # Check for robotic terms
+    # Check for robotic and audit-related terms (expanded ban list)
     robotic_phrases = [
         "during our technical analysis",
         "significant growth opportunities",
@@ -303,11 +303,25 @@ def validate_email_quality(email_body: str, cleaned_name: str, has_report: bool,
         "major operational bottleneck",
         "seamlessly into your current workflow",
         "higher customer acquisition costs",
-        "specific digital pathways are not fully optimized"
+        "specific digital pathways are not fully optimized",
+        "during our review",
+        "technical assessment",
     ]
     for phrase in robotic_phrases:
         if phrase in e_lower:
             return False, f"Contains robotic phrase: '{phrase}'"
+
+    # Check for banned audit/analysis terminology
+    audit_terms = ["audit", "audited", "auditing", "technical review"]
+    for term in audit_terms:
+        if term in e_lower:
+            return False, f"Contains banned audit term: '{term}'"
+
+    # "analysis" / "analyzed" check (skip if part of business name)
+    name_lower = cleaned_name.lower() if cleaned_name else ""
+    for term in ["analysis", "analyzed", "analyzing"]:
+        if term in e_lower and term not in name_lower:
+            return False, f"Contains banned term: '{term}'"
             
     # Check word count
     core_body = email_body
@@ -319,69 +333,114 @@ def validate_email_quality(email_body: str, cleaned_name: str, has_report: bool,
     if word_cnt > 180:
         return False, f"Word count {word_cnt} exceeds 180 words limit"
 
-    # Grounding check
-    if has_report:
-        pt_mentioned = False
-        for pt in normalized_pain_points:
-            pt_title = pt.get("title", "") if isinstance(pt, dict) else pt
-            keywords = [w for w in pt_title.lower().replace("-", " ").split() if len(w) > 4]
-            if not keywords:
-                keywords = [pt_title.lower()]
-            for kw in keywords[:3]:
+    # Grounding check using sales intelligence
+    if has_report and sales_intelligence:
+        # Check that the email references something from the intelligence
+        grounded = False
+        
+        # Check personalization hooks
+        for hook in sales_intelligence.get("personalization_hooks", []):
+            hook_keywords = [w for w in hook.lower().replace("-", " ").split() if len(w) > 4]
+            for kw in hook_keywords[:3]:
                 if kw in e_lower:
-                    pt_mentioned = True
+                    grounded = True
                     break
-            if pt_mentioned:
+            if grounded:
                 break
         
-        if not pt_mentioned and any(kw in e_lower for kw in ["testimonial", "proof", "booking", "whatsapp", "visibility", "enquiry", "page", "platform"]):
-            pt_mentioned = True
-        if not pt_mentioned:
-            return False, "Does not mention any cleaned pain points"
-
-        svc_mentioned = False
-        for svc in selected_services:
-            svc_name = svc.get("service_name", "") if isinstance(svc, dict) else svc
-            keywords = [w for w in svc_name.lower().replace("-", " ").split() if len(w) > 4]
-            if not keywords:
-                keywords = [svc_name.lower()]
-            for kw in keywords[:3]:
-                if kw in e_lower:
-                    svc_mentioned = True
+        # Check conversion/trust/seo gaps
+        if not grounded:
+            all_gaps = (
+                sales_intelligence.get("conversion_gaps", []) +
+                sales_intelligence.get("trust_gaps", []) +
+                sales_intelligence.get("seo_gaps", [])
+            )
+            for gap in all_gaps:
+                gap_keywords = [w for w in gap.lower().replace("-", " ").split() if len(w) > 4]
+                for kw in gap_keywords[:3]:
+                    if kw in e_lower:
+                        grounded = True
+                        break
+                if grounded:
                     break
-            if svc_mentioned:
-                break
-                
-        if not svc_mentioned and any(kw in e_lower for kw in ["landing", "seo", "whatsapp", "booking", "flow", "testimonial", "cta"]):
-            svc_mentioned = True
-        if not svc_mentioned:
-            return False, "Does not mention any relevant 3FI Tech services"
+        
+        # Broad keyword fallback
+        if not grounded and any(kw in e_lower for kw in [
+            "testimonial", "proof", "booking", "whatsapp", "visibility",
+            "enquiry", "enquiries", "contact", "trust", "reviews", "mobile",
+            "search", "discover", "customers", "visitors"
+        ]):
+            grounded = True
+        
+        if not grounded:
+            return False, "Does not reference any finding from sales intelligence"
 
     return True, "Passed"
 
-def generate_deterministic_template(lead_name, category, location, pain_points, recommended_services):
+def generate_deterministic_template(lead_name, category, location, sales_intelligence: dict = None):
     """
     Structured, benefit-focused B2B cold email of 100-150 words.
-    Perfectly grounded in extracted report pain points and recommended services using warm, simple language.
+    Uses sales intelligence for personalization when available.
     """
-    pts = pain_points
-    if not pts:
-        pts = ["limited testimonials or customer proof on your page", "no direct enquiry or contact flow"]
-    elif len(pts) == 1:
-        pts.append("not having a clear pathway for quick enquiries")
-        
-    svcs = recommended_services
-    if not svcs:
-        svcs = ["a conversion-focused landing page and clearer enquiry pathways", "testimonial sections and WhatsApp/contact integration"]
-    
-    # 1. Warm Opener & Observation
-    p1 = f"I came across {lead_name} and noticed a couple of areas that could be improved online. Specifically, we noticed opportunities around having {pts[0]} and {pts[1]}."
+    # Extract from sales intelligence if available
+    if sales_intelligence:
+        hooks = sales_intelligence.get("personalization_hooks", [])
+        gaps = (
+            sales_intelligence.get("conversion_gaps", []) +
+            sales_intelligence.get("trust_gaps", [])
+        )
+        service = sales_intelligence.get("recommended_service", "")
+        impact = sales_intelligence.get("business_impact_summary", "")
+    else:
+        hooks = []
+        gaps = []
+        service = ""
+        impact = ""
+
+    # Build hook reference
+    if hooks:
+        hook_text = hooks[0]
+    else:
+        hook_text = f"strong presence in the {category} space"
+
+    # Build gap reference
+    if len(gaps) >= 2:
+        gap1, gap2 = gaps[0], gaps[1]
+    elif len(gaps) == 1:
+        gap1 = gaps[0]
+        gap2 = "not having a clear pathway for quick enquiries"
+    else:
+        gap1 = "limited visible testimonials or customer proof"
+        gap2 = "no direct enquiry or contact flow for visitors"
+
+    # Build service reference
+    if not service:
+        service = "conversion-focused website optimization"
+
+    # 1. Warm Opener & Specific Observation
+    p1 = (
+        f"I came across {lead_name} and was impressed by your {hook_text}. "
+        f"One thing I noticed is that visitors currently face {gap1}, "
+        f"which could make it harder for potential customers to reach out."
+    )
     
     # 2. Business Impact
-    p2 = f"For a local {category} business, these small gaps can make it harder for new visitors to understand your value, trust your service, and contact you quickly."
+    if impact:
+        p2 = impact
+    else:
+        p2 = (
+            f"For a local {category} business, this kind of gap can mean "
+            f"losing potential customers who are ready to enquire but "
+            f"can't find a quick way to do so."
+        )
     
     # 3. Value pitch & CTA
-    p3 = f"At 3FI Tech, we specialize in helping local businesses with exactly this — building {svcs[0]} and {svcs[1]} to turn more website visitors into customers. Would you be open to a quick 5-minute review next week to see how this could work for {lead_name}?"
+    p3 = (
+        f"At 3FI Tech, we help local businesses with exactly this kind of thing — "
+        f"{service.lower()}, stronger enquiry pathways, and better trust signals. "
+        f"Would you be open to a quick 5-minute review next week to see how "
+        f"a couple of small changes could help {lead_name}?"
+    )
     
     body = f"{p1}\n\n{p2}\n\n{p3}"
     return body
@@ -397,8 +456,16 @@ def generate_outreach(
 ) -> dict:
     """
     Generate personalized, human-sounding outreach based on full lead + audit context.
-    Uses the improved EMAIL_GENERATOR_PROMPT, cleans inputs, and validates quality.
+    
+    NEW FLOW:
+    1. Clean lead data
+    2. Generate Sales Intelligence from audit report
+    3. Pass Sales Intelligence to EMAIL_GENERATOR_PROMPT
+    4. Validate and retry/fallback
+    5. Generate WhatsApp, LinkedIn, follow-ups
     """
+    from modules.ai.sales_intelligence_generator import generate_sales_intelligence
+    
     ai = AIClient()
 
     # 1. Clean Lead Name
@@ -407,43 +474,28 @@ def generate_outreach(
 
     # 2. Category Validation & Industry Inference
     raw_category = lead.category or "Unknown"
-    category_is_invalid = is_invalid_category(raw_category)
     inferred_category = infer_category(cleaned_lead_name, raw_category)
 
-    # Determine fallback mode
-    is_fallback = False
-    if not report or not report.ai_report_json:
-        is_fallback = True
-
-    # 4. Convert Raw Pain Points to Natural Human Language
-    raw_pts = []
-    report_exists = report is not None
-    ai_report_json_exists = (report.ai_report_json is not None) if report_exists else False
+    # 3. Generate Sales Intelligence (the new intermediary layer)
+    is_fallback = not report or not report.ai_report_json
     
-    if report_exists:
-        if report.pain_points_json:
-            raw_pts = report.pain_points_json
-        elif report.ai_report_json and report.ai_report_json.get("top_pain_points"):
-            raw_pts = report.ai_report_json.get("top_pain_points")
-            
-    normalized_pts = normalize_pain_points(raw_pts)
+    # Check if report already has sales intelligence stored
+    sales_intel = None
+    if report and hasattr(report, 'sales_intelligence_json') and report.sales_intelligence_json:
+        sales_intel = report.sales_intelligence_json
+        logger.info(f"Using pre-computed sales intelligence for: {cleaned_lead_name}")
+    else:
+        sales_intel = generate_sales_intelligence(report, lead)
+        logger.info(f"Generated fresh sales intelligence for: {cleaned_lead_name}")
 
-    # 5. Service Recommendation Expansion
-    selected_svcs = expand_services(normalized_pts)
-
-    # 10. Debugging Logs before generation
+    # Debug logging
     logger.info("--- OUTREACH GENERATION DEBUG START ---")
-    logger.info(f"Raw Lead Name: {raw_lead_name}")
-    logger.info(f"Cleaned Lead Name: {cleaned_lead_name}")
-    logger.info(f"Raw Category: {raw_category}")
-    logger.info(f"Cleaned/Inferred Category: {inferred_category}")
-    logger.info(f"Raw Pain Points: {raw_pts}")
-    logger.info(f"Normalized Pain Points: {normalized_pts}")
-    logger.info(f"Selected Services: {selected_svcs}")
-    logger.info(f"Whether Category Was Invalid: {category_is_invalid}")
-    logger.info(f"Fallback Mode Active: {is_fallback}")
+    logger.info(f"Lead: {cleaned_lead_name} | Category: {inferred_category} | Fallback: {is_fallback}")
+    logger.info(f"Sales Intel - Hooks: {sales_intel.get('personalization_hooks', [])}")
+    logger.info(f"Sales Intel - Pitch: {sales_intel.get('best_pitch_angle', '')}")
+    logger.info(f"Sales Intel - Service: {sales_intel.get('recommended_service', '')}")
 
-    # Pass clean, inferred category and clean name into lead_data_dict
+    # 4. Prepare lead data for the email prompt
     lead_data_dict = {
         "business_name": cleaned_lead_name,
         "category": inferred_category,
@@ -455,55 +507,21 @@ def generate_outreach(
         "email": lead.email or "N/A"
     }
 
-    if is_fallback:
-        lead_analysis_dict = {
-            "lead_score": None,
-            "trust_signals": None,
-            "detected_pain_points": None,
-            "missing_features": None,
-            "business_summary": None,
-            "growth_opportunities": None,
-            "recommended_services": None,
-            "proposed_solution": None,
-            "ai_report": None,
-            "lead_intelligence_analysis": None
-        }
-        lead_analysis_text = "[NO LEAD INTELLIGENCE AND ANALYSIS AVAILABLE - FALLBACK OUTREACH MODE IS ACTIVE]\n\n" \
-                             "Since no technical audit or intelligence is available, you must write a safe general outreach email based ONLY on the available RAW LEAD DATA.\n" \
-                             "Do NOT invent any technical problems, poor mobile/SEO experience, or speed issues.\n\n" \
-                             "Use one of the following safe fallback angles depending on the lead category and raw data:\n" \
-                             "- If the website is missing: Pitch a clean, professional website and a seamless online enquiry flow.\n" \
-                             "- If rating/reviews are available (e.g. high rating): Focus on leveraging their existing trust and local reputation to capture even more digital enquiries.\n" \
-                             "- If school/college: Focus on admission enquiry handling, parent communication, and website usability.\n" \
-                             "- If clinic/hospital: Focus on appointment enquiry handling, patient trust, and seamless booking.\n" \
-                             "- If restaurant/cafe: Focus on online bookings, order enquiry flow, and guest experience.\n" \
-                             "- If salon/spa: Focus on appointment booking, local visibility, and repeat customer follow-ups.\n" \
-                             "- If only name/category/location are available: Focus on general digital discoverability and enquiry handling."
+    # 5. Build the lead analysis text from Sales Intelligence
+    if is_fallback and not sales_intel.get("personalization_hooks"):
+        # Total fallback — no intelligence available at all
+        lead_analysis_text = (
+            "[NO SALES INTELLIGENCE AVAILABLE - FALLBACK MODE]\n\n"
+            "Write a safe general outreach email based ONLY on the RAW LEAD DATA.\n"
+            "Do NOT invent any technical problems or issues.\n\n"
+            "Use a safe fallback angle based on the business category:\n"
+            "- Focus on general digital discoverability and enquiry handling.\n"
+            "- If the website is missing: Pitch a professional website and enquiry flow.\n"
+            "- If rating/reviews are high: Leverage their trust to capture more digital enquiries."
+        )
     else:
-        raw_audit = report.raw_audit_json or {}
-        ai_report_data = report.ai_report_json or {}
-        
-        missing_features = raw_audit.get("site_info", {}).get("missing_features", [])
-        if not missing_features and raw_audit.get("cta", {}).get("missing_features"):
-            missing_features = raw_audit.get("cta", {}).get("missing_features", [])
-            
-        lead_analysis_dict = {
-            "lead_score": report.overall_score,
-            "trust_signals": raw_audit.get("trust", {}) or ai_report_data.get("trust_signals", {}),
-            "detected_pain_points": normalized_pts,
-            "missing_features": missing_features,
-            "business_summary": ai_report_data.get("executive_summary") or ai_report_data.get("business_summary"),
-            "growth_opportunities": ai_report_data.get("growth_opportunities") or (ai_report_data.get("technical_summary", {}).get("main_technical_issues") if ai_report_data else []),
-            "recommended_services": selected_svcs,
-            "proposed_solution": ai_report_data.get("main_pitch_angle") or ai_report_data.get("proposed_solution"),
-            "ai_report": ai_report_data,
-            "lead_intelligence_analysis": {
-                "opportunity_level": report.opportunity_level,
-                "opportunity_score": report.opportunity_score,
-                "technical_summary": ai_report_data.get("technical_summary", {})
-            }
-        }
-        lead_analysis_text = json.dumps(lead_analysis_dict, indent=2, ensure_ascii=False)
+        # Sales Intelligence is available — pass it as the primary context
+        lead_analysis_text = json.dumps(sales_intel, indent=2, ensure_ascii=False)
 
     lead_data_text = json.dumps(lead_data_dict, indent=2, ensure_ascii=False)
 
@@ -511,18 +529,25 @@ def generate_outreach(
     sender_role = settings.SENDER_ROLE
     agency_website = settings.AGENCY_WEBSITE
 
-    # Format the prompt
+    # 6. Format the prompt with Sales Intelligence
+    serp_page = getattr(lead, "serp_page", None)
+    serp_position = getattr(lead, "serp_position", None)
+    source_query = getattr(lead, "source_query", None)
+
     prompt = EMAIL_GENERATOR_PROMPT.format(
         lead_data=lead_data_text,
         lead_analysis=lead_analysis_text,
         sender_name=sender_name,
         sender_role=sender_role,
-        agency_website=agency_website
+        agency_website=agency_website,
+        serp_page=serp_page if serp_page is not None else "Unknown",
+        serp_position=serp_position if serp_position is not None else "Unknown",
+        source_query=source_query if source_query else "Unknown"
     )
 
     logger.info(f"Generating outreach for lead: {cleaned_lead_name} | is_fallback={is_fallback}")
 
-    # Generate with Groq Client
+    # 7. Generate email with AI
     email_source = "AI"
     result = ai.generate_json(prompt)
 
@@ -532,23 +557,23 @@ def generate_outreach(
 
     email_body = result.get("email_body", "")
     
-    # 9. Quality Validation & Feedback-Based Auto-Retry
+    # 8. Quality Validation with Sales Intelligence grounding
     passed, error_msg = validate_email_quality(
         email_body=email_body, 
         cleaned_name=cleaned_lead_name, 
-        has_report=not is_fallback, 
-        normalized_pain_points=normalized_pts, 
-        selected_services=selected_svcs
+        has_report=not is_fallback,
+        sales_intelligence=sales_intel
     )
     
     logger.info(f"Quality validation: {passed} (Details: {error_msg})")
 
     if not passed or "error" in result:
-        logger.warning(f"Outreach generation failed quality check with error: {error_msg}. Retrying once with strict feedback instruction.")
+        logger.warning(f"Outreach generation failed quality check: {error_msg}. Retrying with feedback.")
         retry_prompt = prompt + f"\n\n========================\nSTRICT RE-GENERATION FEEDBACK\n========================\n" \
-                                f"Your previous draft failed quality validation with this exact issue: {error_msg}.\n" \
-                                f"Please completely rewrite the B2B cold email to strictly avoid this error.\n" \
-                                f"It must be 100-150 words of extremely warm, human, natural language. Do NOT use site:, search queries, @gmail.com or robotic jargon."
+                                f"Your previous draft failed quality validation: {error_msg}.\n" \
+                                f"Rewrite the email completely. It must be 100-150 words.\n" \
+                                f"Use warm, human language. Reference a specific business observation.\n" \
+                                f"Do NOT use the words 'audit', 'analysis', 'technical review', 'site:', '@gmail.com', or robotic jargon."
         
         retry_result = ai.generate_json(retry_prompt)
         if "error" not in retry_result:
@@ -557,33 +582,28 @@ def generate_outreach(
                 email_body=retry_body,
                 cleaned_name=cleaned_lead_name,
                 has_report=not is_fallback,
-                normalized_pain_points=normalized_pts,
-                selected_services=selected_svcs
+                sales_intelligence=sales_intel
             )
             if retry_passed:
                 result = retry_result
                 email_body = retry_body
                 passed = True
                 error_msg = "Passed after retry"
-                logger.info(f"Successfully generated high-quality email after retry validation.")
+                logger.info(f"Successfully generated high-quality email after retry.")
             else:
-                logger.warning(f"Retry draft also failed quality validation: {retry_error}")
+                logger.warning(f"Retry also failed quality validation: {retry_error}")
                 error_msg = f"Retry failed: {retry_error}"
 
-    # 11. Deterministic template fallback if still failing or invalid
+    # 9. Deterministic template fallback using Sales Intelligence
     if not passed or "error" in result:
-        logger.warning(f"AI generation completely failed validation checks. Falling back to the deterministic template.")
+        logger.warning(f"AI generation failed validation. Falling back to deterministic template.")
         email_source = "fallback"
-        
-        pt_titles = [p.get("title", p) if isinstance(p, dict) else p for p in normalized_pts]
-        svc_names = [s.get("service_name", s) if isinstance(s, dict) else s for s in selected_svcs]
         
         deterministic_body = generate_deterministic_template(
             lead_name=cleaned_lead_name,
             category=inferred_category,
             location=f"{lead.city or ''}, {lead.state or ''}".strip(", ") or "your area",
-            pain_points=pt_titles,
-            recommended_services=svc_names
+            sales_intelligence=sales_intel
         )
         result["email_body"] = deterministic_body
         email_body = deterministic_body
@@ -620,17 +640,18 @@ def generate_outreach(
     for field in required_fields:
         if field not in result or not result[field]:
             if field == "subject":
-                result["subject"] = f"Improve {cleaned_lead_name}’s online enquiries"
+                result["subject"] = f"Improve {cleaned_lead_name}'s online enquiries"
             elif field == "preview_text":
                 result["preview_text"] = f"Ideas for {cleaned_lead_name}"
             elif field == "email_body":
-                result["email_body"] = f"Hi,\n\nWe would love to help you build a professional online presence for {cleaned_lead_name}.\n\nBest,\nDeepak Kishor"
+                result["email_body"] = f"Hi,\n\nWe would love to help you build a professional online presence for {cleaned_lead_name}.\n\nBest,\n{sender_name}"
             elif field == "identified_problem":
-                result["identified_problem"] = "General digital presence"
+                result["identified_problem"] = sales_intel.get("best_pitch_angle", "General digital presence")
             elif field == "proposed_solution":
-                result["proposed_solution"] = "Website Audit & Optimization"
+                result["proposed_solution"] = sales_intel.get("recommended_service", "Digital Presence Optimization")
             elif field == "personalization_used":
-                result["personalization_used"] = cleaned_lead_name
+                hooks = sales_intel.get("personalization_hooks", [])
+                result["personalization_used"] = hooks[0] if hooks else cleaned_lead_name
             elif field == "confidence_score":
                 result["confidence_score"] = "Medium"
             elif field == "email_type":
@@ -639,25 +660,28 @@ def generate_outreach(
     # Match UI expectations
     result["subject_lines"] = [result["subject"]]
     
-    # Generate WhatsApp message
+    # Generate WhatsApp message using sales intelligence
+    pitch_angle = sales_intel.get("best_pitch_angle", result.get("proposed_solution", ""))
     whatsapp_prompt = f"""
 Write a WhatsApp message under 60 words for {cleaned_lead_name} ({inferred_category}, {f"{lead.city or ''}".strip()}).
-Based on this insight: {result.get('proposed_solution', '')}
+Based on this insight: {pitch_angle}
 Tone: friendly, direct. No formal greetings. Start with a specific observation.
+Do NOT use the words 'audit', 'analysis', or 'technical review'.
 Return JSON: {{"whatsapp_message": ""}}
 """
     wa_res = ai.generate_json(whatsapp_prompt)
-    result["whatsapp_message"] = wa_res.get("whatsapp_message", f"Hi! I was reviewing {cleaned_lead_name} and had a quick idea to improve your local enquiries. Would you be open to a quick chat?")
+    result["whatsapp_message"] = wa_res.get("whatsapp_message", f"Hi! I was looking at {cleaned_lead_name} and had a quick idea to help capture more enquiries. Would you be open to a quick chat?")
 
-    # Generate LinkedIn message
+    # Generate LinkedIn message using sales intelligence
     linkedin_prompt = f"""
 Write a LinkedIn connection note under 50 words for {cleaned_lead_name} ({inferred_category}, {f"{lead.city or ''}".strip()}).
-Based on this insight: {result.get('proposed_solution', '')}
+Based on this insight: {pitch_angle}
 Tone: professional, curious. No generic phrases.
+Do NOT use the words 'audit', 'analysis', or 'technical review'.
 Return JSON: {{"linkedin_message": ""}}
 """
     li_res = ai.generate_json(linkedin_prompt)
-    result["linkedin_message"] = li_res.get("linkedin_message", f"Hi, I noticed {cleaned_lead_name} and really liked your local presence. I'd love to connect and share a quick digital discovery idea.")
+    result["linkedin_message"] = li_res.get("linkedin_message", f"Hi, I noticed {cleaned_lead_name} and really liked your local presence. I'd love to connect and share a quick idea.")
 
     # Generate followups
     result["follow_up_1"] = generate_followup(lead, result["subject"], result["email_body"], 1)
@@ -665,7 +689,7 @@ Return JSON: {{"linkedin_message": ""}}
 
     word_count = count_words(result["email_body"].split("\n\nBest regards,")[0])
 
-    # 10. Debugging logs end
+    # Debug logging end
     logger.info(f"Final Word Count (core): {word_count}")
     logger.info(f"Email Source: {email_source}")
     logger.info(f"Is Report-Based: {not is_fallback}")
@@ -677,6 +701,7 @@ Return JSON: {{"linkedin_message": ""}}
     result["is_report_based"] = not is_fallback
     result["word_count"] = word_count
     result["validation_status"] = error_msg
+    result["sales_intelligence"] = sales_intel
 
     return result
 

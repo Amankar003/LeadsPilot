@@ -30,15 +30,38 @@ def generate_query_variations(main_query: str, location: str = "", limit: int = 
         "{query}",
         "best {query}",
         "top {query}",
+        "affordable {query}",
+        "premium {query}",
+        "certified {query}",
+        "professional {query}",
+        "top-rated {query}",
+        "local {query}",
         "{query} near me",
         "{query} services",
+        "{query} solutions",
+        "{query} agency",
+        "{query} firm",
+        "{query} experts",
+        "{query} specialists",
+        "{query} consultants",
+        "{query} contractors",
         "{query} companies",
+        "{query} providers",
+        "{query} corporate",
+        "{query} commercial",
+        "{query} residential",
+        "{query} b2b",
+        "{query} enterprise",
         "{query} contact number",
         "{query} official website",
         "{query} email address",
         "{query} list",
         "list of {query}",
-        "{query} business"
+        "{query} directory",
+        "{query} business",
+        "{query} reviews",
+        "hire {query}",
+        "find {query}"
     ]
 
     # Start building
@@ -48,8 +71,13 @@ def generate_query_variations(main_query: str, location: str = "", limit: int = 
 
     # 2. Local Modifiers
     local_modifiers = [
-        "near Sector 18", "near Sector 62", "near Sector 63", "near Sector 15",
-        "near City Centre", "near main market", "near metro station"
+        "downtown", "north", "south", "east", "west", "central",
+        "business district", "commercial area", "industrial area",
+        "city center", "metro area", "suburbs", "county",
+        "regional", "near main market", "near metro station",
+        "near airport", "near highway", "local area",
+        "Sector 1", "Sector 2", "Sector 3", "Sector 4", "Sector 5",
+        "Phase 1", "Phase 2", "Phase 3"
     ]
     
     for loc_mod in local_modifiers:

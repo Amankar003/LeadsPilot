@@ -81,9 +81,10 @@ class DorkOptimizerService:
                     category=opp_data["category"],
                     target_service=opp_data.get("target_service"),
                     trend_summary=opp_data["trend_summary"],
-                    opportunity_reason=opp_data["opportunity_reason"],
                     suggested_offer=opp_data["suggested_offer"],
                     score=opp_data["score"],
+                    trend_score=opp_data.get("trend_score", 0),
+                    confidence_score=opp_data.get("confidence_score", 0),
                     source_articles=opp_data["source_articles"],
                     created_at=datetime.utcnow()
                 )
@@ -101,19 +102,21 @@ class DorkOptimizerService:
                 
                 opp_dorks = self.generator.generate_from_opportunity(opp_opp_data, dork_limit)
                 
-                for d_data in opp_dorks:
+                for gd in opp_dorks:
                     dork_obj = GeneratedDork(
                         pipeline_run_id=run.id,
                         opportunity_id=opp.id,
-                        dork=d_data["dork"],
-                        dork_type=d_data["dork_type"],
-                        quality_score=d_data["quality_score"],
-                        intent=d_data["intent"],
+                        dork=gd["dork"],
+                        dork_type=gd["dork_type"],
+                        quality_score=gd.get("score", 0),
+                        trend_score=opp_data.get("trend_score", 0),
+                        confidence_score=opp_data.get("confidence_score", 0),
+                        intent=gd["intent"],
                         country=opp.country,
                         state=opp.state,
                         region=opp.region,
                         category=opp.category,
-                        target_service=opp_data.get("target_service"),
+                        target_service=opp.target_service,
                         status="draft",
                         created_at=datetime.utcnow()
                     )
