@@ -1,20 +1,33 @@
 import streamlit as st
+import time
+_app_start = time.perf_counter()
+
 import pandas as pd
 import threading
 import os
-import time
 from utils.logging_utils import get_logger
 from config import settings
 
+_db_start = time.perf_counter()
 from config.database import SessionLocal
 from modules.database.db_init import init_db
 from sqlalchemy.orm import joinedload
 from modules.database.repositories import CampaignRepository, JobRepository, LeadRepository
 from modules.database.dtos import lead_to_dto, job_to_dto
+_db_duration = time.perf_counter() - _db_start
+
+_heavy_start = time.perf_counter()
 from modules.input.manual_input import parse_manual_input
 from modules.input.excel_parser import parse_excel_input
 from modules.jobs.job_manager import JobManager
 from modules.jobs.scraping_planner import ScrapingPlanner
+_heavy_duration = time.perf_counter() - _heavy_start
+
+from utils.constants import PLATFORM_GOOGLE_MAPS, PLATFORM_GOOGLE_EMAIL
+from modules.ui.theme import inject_custom_css, page_header, empty_state, status_badge, workflow_indicator
+
+logger = get_logger(__name__)
+logger.info(f"[PROFILING] DB Imports: {_db_duration:.2f}s | Heavy Imports: {_heavy_duration:.2f}s | Total Imports: {time.perf_counter() - _app_start:.2f}s")
 from utils.constants import PLATFORM_GOOGLE_MAPS, PLATFORM_GOOGLE_EMAIL
 from modules.ui.theme import inject_custom_css, page_header, empty_state, status_badge, workflow_indicator
 
@@ -35,6 +48,7 @@ def setup_database():
 setup_database()
 
 
+@st.cache_resource
 def run_startup_checks():
     issues = []
     optional = []
@@ -84,15 +98,14 @@ def start_worker():
 start_worker()
 
 # Ensure analysis queue processor is running and recover any stuck jobs on startup
-try:
-    from modules.analysis.job_processor import recover_stuck_jobs, start_processor_thread
+@st.cache_resource
+def _start_analysis_processor():
     try:
-        recover_stuck_jobs()
+        from modules.analysis.job_processor import start_processor_thread
+        start_processor_thread()  # This already calls recover_stuck_jobs() internally
     except Exception:
-        logger.exception("Error while recovering stuck analysis jobs on startup")
-    start_processor_thread()
-except Exception:
-    logger.warning("Analysis job processor not available at startup")
+        logger.warning("Analysis job processor not available at startup")
+_start_analysis_processor()
 
 
 # ─── Theme ───
