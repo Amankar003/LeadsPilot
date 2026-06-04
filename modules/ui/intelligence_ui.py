@@ -276,10 +276,14 @@ def render_analysis_dashboard():
         with fc3:
             filter_website = st.checkbox("🌐 Has Website only", key="intel_filter_website")
 
+        # Initialize selection state if missing
+        if "selected_lead_ids" not in st.session_state:
+            st.session_state["selected_lead_ids"] = []
+        if "selected_leads" not in st.session_state:
+            st.session_state["selected_leads"] = []
+
         # Build table data
         data = []
-        select_top_30 = st.session_state.get("select_top_30", False)
-        selected_count = 0
         
         for l in leads:
             # Apply filters
@@ -298,10 +302,7 @@ def render_analysis_dashboard():
                 elif job.status == "COMPLETED": status = "✅ Report Ready"
                 elif job.status == "FAILED": status = "❌ Failed"
                 
-            is_selected = False
-            if select_top_30 and status == "Ready" and selected_count < 30:
-                is_selected = True
-                selected_count += 1
+            is_selected = l.id in st.session_state["selected_lead_ids"]
                 
             data.append({
                 "Select": is_selected,
@@ -314,9 +315,6 @@ def render_analysis_dashboard():
                 "Status": status,
                 "Lead Status": l.status
             })
-            
-        if select_top_30:
-            st.session_state["select_top_30"] = False
             
         if not data:
             empty_state("👥", "No Matching Leads", "No leads match the selected filters.")
@@ -337,7 +335,11 @@ def render_analysis_dashboard():
         
         # Action Bar
         col1, col2, col3 = st.columns([1.5, 1, 1.5])
-        
+
+        # Use a versioned editor key so we can force recreation when needed
+        editor_version = st.session_state.get("intel_editor_version", 0)
+        editor_key = f"intel_editor_v{editor_version}"
+
         edited_df = st.data_editor(
             df, hide_index=True, width="stretch",
             column_config={
@@ -345,18 +347,28 @@ def render_analysis_dashboard():
                 "Lead ID": st.column_config.TextColumn("Lead ID", disabled=True),
             },
             disabled=["Business Name", "Email", "Phone", "Website", "Campaign", "Status", "Lead Status"],
-            key="intel_editor"
+            key=editor_key
         )
         
-        selected_ids_for_analysis = edited_df[edited_df["Select"] == True]["Lead ID"].tolist()
+        # Sync manual edits back to session state
+        selected_ids_from_editor = edited_df[edited_df["Select"] == True]["Lead ID"].tolist()
+        st.session_state["selected_lead_ids"] = selected_ids_from_editor
+        st.session_state["selected_leads"] = [l for l in leads if l.id in selected_ids_from_editor]
         
+        # Debug Panel
+        with st.expander("🛠️ Debug: Selection State"):
+            c1, c2 = st.columns(2)
+            c1.metric("Selected Leads Count", len(st.session_state["selected_leads"]))
+            c2.metric("Selected IDs Count", len(st.session_state["selected_lead_ids"]))
+            st.write("Current selected IDs:", st.session_state["selected_lead_ids"])
+            
         with col1:
             if st.button("🚀 Analyze Selected Leads", type="primary", use_container_width=True):
-                if not selected_ids_for_analysis:
+                if not st.session_state["selected_lead_ids"]:
                     st.warning("Please select leads to analyze.")
                 else:
                     queued = 0
-                    for lid in selected_ids_for_analysis:
+                    for lid in st.session_state["selected_lead_ids"]:
                         if queue_analysis_job(db, lid):
                             queued += 1
                     if queued > 0:
@@ -370,10 +382,22 @@ def render_analysis_dashboard():
                 st.rerun()
                 
         with col3:
-            if st.button("👉 Select Top 30 Leads", use_container_width=True):
-                st.session_state["select_top_30"] = True
-                if "intel_editor" in st.session_state:
-                    del st.session_state["intel_editor"]
+            if st.button("👉 Select Top 30 Leads", key="btn_select_top_30", use_container_width=True):
+                top_30 = []
+                count = 0
+                for row in data:
+                    if row["Status"] == "Ready" and count < 30:
+                        top_30.append(row["Lead ID"])
+                        count += 1
+                st.session_state["selected_lead_ids"] = top_30
+                st.session_state["selected_leads"] = [l for l in leads if l.id in top_30]
+                st.session_state["intel_editor_version"] = st.session_state.get("intel_editor_version", 0) + 1
+                st.rerun()
+            if st.button("✅ Select All Leads", key="btn_select_all", use_container_width=True):
+                all_ids = [row["Lead ID"] for row in data]
+                st.session_state["selected_lead_ids"] = all_ids
+                st.session_state["selected_leads"] = [l for l in leads if l.id in all_ids]
+                st.session_state["intel_editor_version"] = st.session_state.get("intel_editor_version", 0) + 1
                 st.rerun()
 
         st.markdown("---")
@@ -383,7 +407,7 @@ def render_analysis_dashboard():
         col_ex1, col_ex2 = st.columns([1, 1])
         with col_ex1:
             if st.button("✉️ Generate Emails for Selected Leads", type="primary", use_container_width=True):
-                if not selected_ids_for_analysis:
+                if not st.session_state["selected_lead_ids"]:
                     st.warning("Please select leads to generate emails for.")
                 else:
                     from modules.analysis.outreach_generator import generate_outreach
@@ -393,7 +417,7 @@ def render_analysis_dashboard():
                     
                     with st.spinner("Generating missing emails for selected leads..."):
                         generated_count = 0
-                        for lid in selected_ids_for_analysis:
+                        for lid in st.session_state["selected_lead_ids"]:
                             # Check if already exists
                             latest = repo.get_latest_for_lead(lid)
                             if not latest:
@@ -427,12 +451,12 @@ def render_analysis_dashboard():
             st.caption("After generating, preview and download your CSV below.")
 
         # Display preview and download button
-        if selected_ids_for_analysis:
+        if st.session_state["selected_lead_ids"]:
             from modules.database.repositories import OutreachMessageRepository
             repo = OutreachMessageRepository(db)
             export_data = []
             
-            for lid in selected_ids_for_analysis:
+            for lid in st.session_state["selected_lead_ids"]:
                 lead_obj = db.query(Lead).filter(Lead.id == lid).first()
                 latest = repo.get_latest_for_lead(lid)
                 if latest and lead_obj:
