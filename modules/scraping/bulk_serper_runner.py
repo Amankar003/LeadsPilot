@@ -7,7 +7,6 @@ from phonenumbers import NumberParseException
 from typing import List, Dict, Any, Callable
 from sqlalchemy.orm import Session
 
-from modules.scraping.query_expander import generate_query_variations
 from modules.scraping.serper_bulk_scraper import fetch_serper_results
 from modules.scraping.lead_cleaner import dedupe_serp_results, get_domain
 from modules.scraping.website_contact_scraper import scrape_contact_info
@@ -395,8 +394,6 @@ def run_bulk_serper_scraping(
     main_query: str,
     location: str = "",
     target_count: int = 5000,
-    max_query_variations: int = 30,
-    max_pages_per_query: int = 10,
     scrape_websites: bool = True,
     progress_callback: Callable = None
 ) -> dict:
@@ -426,14 +423,8 @@ def run_bulk_serper_scraping(
             thread_db.close()
 
     try:
-        # 1. Expand Queries
-        queries = generate_query_variations(
-            main_query,
-            location,
-            limit=max_query_variations
-        )
-
-        logger.info(f"Generated {len(queries)} query variations for: {main_query}")
+        query = f"{main_query} {location}".strip()
+        logger.info(f"Running bulk scrape for exact query: {query}")
 
         lead_repo = LeadRepository(db)
         job_repo = JobRepository(db)
@@ -443,43 +434,41 @@ def run_bulk_serper_scraping(
         seen_business_domains = set()
         seen_contact_keys = set()
 
-        # 2. Loop through queries
-        for q_idx, query in enumerate(queries):
+        if is_stopped():
+            logger.info("Stopping bulk scraping as per user request.")
+            return summary
+
+        phone_region = infer_phone_region(location=location, query=query)
+
+        if progress_callback:
+            progress_callback(
+                f"Processing query: {query}",
+                0.1
+            )
+
+        # Loop through pages dynamically
+        page = 1
+        consecutive_empty_pages = 0
+        MAX_CONSECUTIVE_EMPTY = 2
+        MAX_TOTAL_PAGES = 50  # Hard stop to prevent runaway API usage
+        
+        while page <= MAX_TOTAL_PAGES:
             if is_stopped():
-                logger.info("Stopping bulk scraping as per user request.")
                 break
 
             if summary["unique_leads_saved"] >= target_count:
                 logger.info(f"Target count reached: {target_count}")
                 break
 
-            # Dynamic phone region for this query
-            # Example:
-            # location="London" => GB
-            # location="Dubai" => AE
-            # location="Delhi" => IN
-            # unknown => None, no forced +91
-            phone_region = infer_phone_region(location=location, query=query)
+            results = fetch_serper_results(query, page=page)
 
-            if progress_callback:
-                progress_callback(
-                    f"Processing query {q_idx + 1}/{len(queries)}: {query}",
-                    (q_idx / len(queries)) * 0.5
-                )
-
-            # 3. Loop through pages
-            for page in range(1, max_pages_per_query + 1):
-                if is_stopped():
+            if not results:
+                consecutive_empty_pages += 1
+                if consecutive_empty_pages >= MAX_CONSECUTIVE_EMPTY:
+                    logger.info("Results exhausted. Stopping pagination.")
                     break
-
-                if summary["unique_leads_saved"] >= target_count:
-                    logger.info(f"Target count reached: {target_count}")
-                    break
-
-                results = fetch_serper_results(query, page=page)
-
-                if not results:
-                    break
+            else:
+                consecutive_empty_pages = 0
 
                 summary["raw_results_found"] += len(results)
                 summary["pages_processed"] += 1
@@ -798,6 +787,7 @@ def run_bulk_serper_scraping(
                         _save_raw_record(db, job_id, campaign_id, title, link, email, phone, location, main_query, page, res, status, "Missing contact info")
 
                 time.sleep(1)
+                page += 1
 
             summary["queries_processed"] += 1
 

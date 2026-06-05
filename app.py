@@ -476,8 +476,8 @@ elif page_clean == "Campaigns":
                 main_query = st.text_input("Main Query (e.g. Dentists)", "Dentists")
             with col2:
                 location = st.text_input("Location (e.g. Noida)", "Noida")
-                max_vars = st.number_input("Max Query Variations", min_value=1, max_value=200, value=50)
-                max_pages = st.number_input("Max Pages Per Query", min_value=1, max_value=20, value=10)
+                st.write("") # Spacing
+                st.write("") # Spacing
             
             if not location:
                 st.warning("⚠️ **For bulk SERP scraping, please add a location** like Noida, Delhi, Gurgaon, etc. Broad queries may return irrelevant global websites (e.g. Wikipedia, Mayo Clinic).")
@@ -485,7 +485,11 @@ elif page_clean == "Campaigns":
             if "facebook.com" in main_query.lower():
                 st.info("ℹ️ **Facebook Note:** Facebook pages cannot be scraped for contact info directly. The system will save the SERP results only. For direct email/phone leads, try queries like: 'carpenters in London official website'.")
             
-            scrape_sites = st.checkbox("🔍 Scrape websites for emails/phones", value=True)
+            col_opts1, col_opts2 = st.columns(2)
+            with col_opts1:
+                scrape_emails = st.checkbox("🔍 Scrape Emails", value=True)
+            with col_opts2:
+                scrape_phones = st.checkbox("📞 Scrape Phones", value=True)
             
             submitted = st.form_submit_button("🚀 Start Bulk SERP Scraping", type="primary", use_container_width=True)
             
@@ -495,60 +499,55 @@ elif page_clean == "Campaigns":
                     from modules.input.manual_input import parse_manual_input
                     from utils.constants import PLATFORM_SERPER_BULK
                     
+                    req_fields = []
+                    if scrape_emails: req_fields.append("email")
+                    if scrape_phones: req_fields.append("phone")
+                    req_fields.append("website")
+                    
                     instruction = parse_manual_input(
-                        campaign_name, PLATFORM_SERPER_BULK, main_query, location, 10000, ["email", "phone", "website"],
+                        campaign_name, PLATFORM_SERPER_BULK, main_query, location, 10000, req_fields,
                         enable_fallback=False
                     )
                     
                     manager = JobManager(db)
                     campaign, job = manager.create_campaign_and_job(instruction)
                     
-                    def run_serper_bulk(j_id):
-                        thread_db = SessionLocal()
-                        try:
-                            from modules.jobs.scraping_planner import ScrapingPlanner
-                            planner = ScrapingPlanner(thread_db)
-                            planner.execute_job(j_id)
-                        finally:
-                            thread_db.close()
+                    # Job created as PENDING. BackgroundWorker will automatically pick it up.
                     
-                    launch_job(run_serper_bulk, job.id)
-                    
-                    st.success(f"✅ Bulk Scraping Campaign **{campaign.campaign_name}** started!")
+                    st.success(f"✅ Bulk Scraping Campaign **{campaign.campaign_name}** queued! Background worker will execute it.")
                     st.balloons()
-                    time.sleep(1)
-                    st.rerun()
                 finally:
                     db.close()
 
-        # Show status of most recent Serper Bulk job
-        db = SessionLocal()
-        try:
-            from modules.database.models import ScrapingJob
-            from utils.constants import PLATFORM_SERPER_BULK, JOB_RUNNING, JOB_PENDING, JOB_STOPPED
-            last_bulk_job = db.query(ScrapingJob).filter(ScrapingJob.platform == PLATFORM_SERPER_BULK).order_by(ScrapingJob.created_at.desc()).first()
-            if last_bulk_job:
-                st.divider()
-                st.markdown(f"##### 📊 Current Bulk Job Status: **{last_bulk_job.status}**")
-                c1, c2, c3 = st.columns(3)
-                c1.metric("📦 Scraped", last_bulk_job.total_scraped)
-                c2.metric("💾 Saved", last_bulk_job.total_saved)
-                c3.metric("🔁 Duplicates", last_bulk_job.total_duplicates)
-                
-                if last_bulk_job.status in (JOB_RUNNING, JOB_PENDING):
-                    if st.button("🛑 Stop Bulk Scraping", type="primary", use_container_width=True):
-                        job = db.query(ScrapingJob).filter(ScrapingJob.id == last_bulk_job.id).first()
-                        if job:
-                            job.status = JOB_STOPPED
-                            db.commit()
-                            st.success("Stopping signal sent!")
-                            st.rerun()
+        @st.fragment(run_every="5s")
+        def render_bulk_job_status():
+            db = SessionLocal()
+            try:
+                from modules.database.models import ScrapingJob
+                from utils.constants import PLATFORM_SERPER_BULK, JOB_RUNNING, JOB_PENDING, JOB_STOPPED
+                last_bulk_job = db.query(ScrapingJob).filter(ScrapingJob.platform == PLATFORM_SERPER_BULK).order_by(ScrapingJob.created_at.desc()).first()
+                if last_bulk_job:
+                    st.divider()
+                    st.markdown(f"##### 📊 Current Bulk Job Status: **{last_bulk_job.status}**")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("📦 Scraped", last_bulk_job.total_scraped)
+                    c2.metric("💾 Saved", last_bulk_job.total_saved)
+                    c3.metric("🔁 Duplicates", last_bulk_job.total_duplicates)
                     
-                    if st.button("🔄 Refresh Status", use_container_width=True):
-                        st.rerun()
-                    st.info("Job is running in the background. It will collect ALL leads available.")
-        finally:
-            db.close()
+                    if last_bulk_job.status in (JOB_RUNNING, JOB_PENDING):
+                        if st.button("🛑 Stop Bulk Scraping", type="primary", use_container_width=True):
+                            job = db.query(ScrapingJob).filter(ScrapingJob.id == last_bulk_job.id).first()
+                            if job:
+                                job.status = JOB_STOPPED
+                                db.commit()
+                                st.success("Stopping signal sent!")
+                        
+                        st.info("Job is running in the background. It will collect ALL leads available.")
+            finally:
+                db.close()
+
+        # Render the auto-refreshing fragment
+        render_bulk_job_status()
 
 
 # ═══════════════════════════════════════════════
