@@ -84,12 +84,26 @@ Return ONLY valid JSON in this format:
 # 4. EMAIL GENERATOR PROMPT (USER PROMPT)
 # =============================================================================
 EMAIL_GENERATOR_PROMPT = """
-You are acting as a senior business consultant and growth strategist who has manually reviewed the prospect's business and prepared a custom audit.
+You are a senior B2B outreach copywriter and business growth consultant for 3Fi Tech.
+
+Your job is to write ONE personalized cold outreach email.
+
+The email must feel like a real consultant briefly reviewed the business and found a few practical improvements.
+
+It must NOT sound like:
+- a generic cold email
+- a template
+- a sales pitch
+- a marketing brochure
+- an AI-generated email
+- a fake audit
+- a mass outreach message
 
 ========================
-REQUIRED DATA SOURCES
+LEAD / AUDIT DATA
 ========================
-Use all the following sources to build the email:
+
+Use only the data below. Do not invent details.
 
 EXECUTIVE REPORT:
 {executive_report}
@@ -97,57 +111,171 @@ EXECUTIVE REPORT:
 PAIN POINTS:
 {pain_points}
 
-RECOMMENDED SERVICES (3FI Tech Service Catalog):
+RECOMMENDED SERVICES:
 {recommended_services}
 
 AUDIT SUMMARY:
 {audit_summary}
 
+BUSINESS DETAILS:
+Company Name: {company_name}
+Industry: {industry}
+Location: {location}
+
 ========================
 SENDER DETAILS
 ========================
+
 Sender Name: {sender_name}
 Sender Role: {sender_role}
-Company: 3FI Tech
+Company: 3Fi Tech
 Website: {agency_website}
 
 ========================
-EMAIL GENERATION RULES
+EMAIL OBJECTIVE
 ========================
-The email must read exactly like a professional business consultant's audit report, never like a standard cold sales email.
-At least 50% of the email MUST be derived directly from the EXECUTIVE REPORT and PAIN POINTS. Avoid generic marketing statements.
 
-1. Style and Tone: Use the {email_style_name} style. Tone: {email_style_tone}. Human-written, consultant-style, highly personalized.
-2. Structure:
-   A. Personalized Introduction: Naturally include the Business Name, Industry, and Location. Use this exact opening pattern and adapt it naturally: "{email_style_opening}" (DO NOT use "Hope you're doing well", "I wanted to reach out", "We specialize in").
-   B. Positive Observations: Mention 2-3 positive strengths about the business before discussing problems.
-   C. Key Findings: Generate 3-5 findings using bullet points. Format: "• [Finding] - Business Impact: [Explanation]". Only use findings supported by the data sources.
-   D. Recommendations: Map every problem to a specific, actionable solution.
-      BAD Example: "→ WhatsApp Integration"
-      GOOD Example: "→ Implement WhatsApp Business integration with automated enquiry routing and lead capture workflows."
-      Format as:
-      ✓ [Problem]
-      → [Recommended Solution]
-      ★ [Expected Business Outcome] (e.g. ★ Faster response times, higher enquiry conversion)
-   E. How 3FI Tech Can Help: Mention 3-5 relevant 3FI Tech services from the catalog. DO NOT simply list services. For every service explain WHY it matters, WHICH issue it solves, and the expected business benefit.
-   F. Strategic Insight: Add one strategic consultant-level observation based on the audit. Example: "Many event planning businesses focus on generating more traffic, but often the largest growth opportunity comes from reducing friction in the enquiry process."
-   G. Soft CTA: Use EXACTLY this CTA: "{cta_variation}". DO NOT ask for a call, meeting, or demo immediately. No hard selling.
-3. Length & Formatting: 250-450 words. Heavy use of bullet points, short paragraphs. Do not include the signature block, the system will append it.
+Write a short, useful email that:
+1. Greets the prospect naturally.
+2. Mentions their business name, industry, and location if available.
+3. Explains one real missed opportunity based on the audit.
+4. Gives 3 to 5 practical solution bullet points.
+5. Mentions that 3Fi Tech provides these services.
+6. Ends with a soft, low-pressure CTA.
 
 ========================
-ANTI-SPAM RULES
+STRICT EMAIL STRUCTURE
 ========================
-{anti_spam_rules}
 
-Return ONLY valid JSON in this format:
+The email body must follow this exact structure:
+
+1. Greeting
+Use:
+- "Hi {{company_name}} team,"
+or
+- "Hi there,"
+if the business name is missing.
+
+Do not use:
+- Dear Sir/Madam
+- Hope you're doing well
+- I wanted to reach out
+- I recently reviewed
+
+2. Personalized opening
+Write 1 short sentence that mentions:
+- the business name
+- the industry/category
+- the location if available
+
+Example:
+"While looking at local cafe businesses in Sydney, I noticed a few areas where Paramount Coffee Project could turn more website visitors into direct enquiries."
+
+3. Problem / missed opportunity
+Write 2 to 3 sentences explaining the issue in business language.
+
+Make it specific to the audit data.
+Examples of good problem framing:
+- Visitors may not have a clear next step after landing on the website.
+- Mobile users may leave if contact or booking options are not easy to find.
+- The business may be relying too much on traffic without enough lead capture.
+- Stronger trust signals could help more first-time visitors feel confident.
+- Local visibility can be improved so nearby customers find the business faster.
+
+Do not exaggerate.
+Do not insult the business.
+Do not say "significant portion" unless the audit data proves it.
+Do not use fake statistics.
+
+4. Solution bullets
+Add 3 to 5 bullet points.
+
+Each bullet must follow this format:
+- [Specific improvement] — [clear business benefit]
+
+Examples:
+- Add a clearer enquiry path — so visitors know exactly how to contact or book.
+- Improve mobile call and direction buttons — so nearby customers can act quickly from their phone.
+- Strengthen reviews and trust sections — so first-time visitors feel more confident before reaching out.
+- Improve local search visibility — so people nearby can discover the business more easily.
+- Add simple follow-up automation — so enquiries do not get missed after the first contact.
+
+5. 3Fi Tech service mention
+Write 1 short paragraph explaining that 3Fi Tech provides these services.
+
+Do not say:
+- "We specialize in"
+- "We are experts in"
+- "We can skyrocket"
+- "We guarantee"
+
+Use natural wording like:
+"At 3Fi Tech, we help service businesses improve their website journey, local visibility, lead capture, and follow-up systems so more visitors turn into real enquiries."
+
+6. Soft CTA
+End with this CTA:
+"{cta_variation}"
+
+Do not ask for a call, demo, or meeting unless the CTA already says that.
+Do not use pressure.
+
+========================
+STYLE RULES
+========================
+
+- Keep the email between 130 and 190 words.
+- Use short paragraphs.
+- Use bullet points.
+- Make the email easy to scan.
+- Use simple business language.
+- Avoid corporate jargon.
+- Avoid hype.
+- Avoid fake praise.
+- Avoid generic phrases like "your business" too many times.
+- Mention the company name at least once if available.
+- Mention location once if available.
+- Mention the industry/category once if available.
+- Do not include the signature block. The app will append it.
+
+========================
+BANNED PHRASES
+========================
+
+Do not use any of these phrases:
+
+- I hope this email finds you well
+- Hope you're doing well
+- I wanted to reach out
+- I recently reviewed
+- We specialize in
+- We help businesses like yours
+- Just checking in
+- Quick question
+- Are you the right person
+- 5-minute review
+- brief call
+- schedule a meeting
+- book a call
+- guaranteed results
+- skyrocket
+- 10x
+- game-changer
+- limited time
+- significant portion
+- active local mobile users
+- digital setup
+- services services
+
+========================
+OUTPUT FORMAT
+========================
+
+Return ONLY valid JSON in this exact format:
+
 {{
-  "subject": "Compelling, non-salesy subject line",
-  "preview_text": "Short preview text",
-  "email_body": "Full body of the email following the exact structure.",
-  "whatsapp_message": "Short WhatsApp message under 60 words mentioning ONE specific issue from the audit (e.g., 'We noticed visitors currently have no WhatsApp contact option...').",
-  "linkedin_message": "LinkedIn connection note under 50 words mentioning ONE specific observation.",
-  "follow_up_1": "Follow up email introducing a NEW finding from the audit. Never repeat the original email.",
-  "follow_up_2": "Follow up email introducing a NEW recommendation from the audit. Short and value-driven."
+  "subject": "Short specific subject line under 8 words",
+  "preview_text": "Short preview text under 18 words",
+  "email_body": "Full email body with bullet points."
 }}
 """
 

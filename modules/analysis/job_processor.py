@@ -13,7 +13,7 @@ from utils.logging_utils import get_logger
 logger = get_logger(__name__)
 
 # Maximum concurrent worker threads processing analysis jobs
-MAX_CONCURRENT_JOBS = int(getattr(__import__('os'), 'environ', {}).get('MAX_CONCURRENT_JOBS', 3))
+MAX_CONCURRENT_JOBS = int(getattr(__import__('os'), 'environ', {}).get('AI_ANALYSIS_MAX_WORKERS', 1))
 
 # Processor thread state
 _is_processing = False
@@ -106,10 +106,15 @@ def _execute_job(job_id: str):
 
         # 2. Save Pain Points individually
         try:
+            user_id = getattr(job, "user_id", None) or getattr(lead, "user_id", None)
             for pp in results.get("pain_points", []):
+                if not user_id:
+                    logger.warning("Missing user_id for pain_point. Skipping pain point creation.")
+                    continue
                 db.add(PainPoint(
                     lead_id=lead.id,
                     job_id=job.id,
+                    user_id=user_id,
                     type=pp.get("type"),
                     severity=pp.get("severity"),
                     title=pp.get("title"),
@@ -125,10 +130,15 @@ def _execute_job(job_id: str):
 
         # 3. Save Recommendations individually
         try:
+            user_id = getattr(job, "user_id", None) or getattr(lead, "user_id", None)
             for rec in results.get("recommendations", []):
+                if not user_id:
+                    logger.warning("Missing user_id for recommendation. Skipping recommendation creation.")
+                    continue
                 db.add(RecommendedService(
                     lead_id=lead.id,
                     job_id=job.id,
+                    user_id=user_id,
                     service_name=rec.get("service_name"),
                     priority=rec.get("priority"),
                     reason=rec.get("reason"),
@@ -181,10 +191,10 @@ def _execute_job(job_id: str):
                     service_focus="Auto (from report)",
                     subject_lines=outreach_result.get("subject_lines", []),
                     email_body=outreach_result.get("email_body", ""),
-                    whatsapp_message=outreach_result.get("whatsapp_message", ""),
-                    linkedin_message=outreach_result.get("linkedin_message", ""),
-                    follow_up_1=outreach_result.get("follow_up_1", ""),
-                    follow_up_2=outreach_result.get("follow_up_2", ""),
+                    whatsapp_message="",
+                    linkedin_message="",
+                    follow_up_1="",
+                    follow_up_2="",
                 )
 
                 # Save a CRM draft if none exists for this lead

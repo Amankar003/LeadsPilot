@@ -56,7 +56,23 @@ def run_startup_checks():
     # Startup Logging for Secrets Detection
     logger.info("=== Environment Variables Detection ===")
     logger.info(f"DATABASE_URL detected: {'YES' if settings.DATABASE_URL and settings.DATABASE_URL != 'sqlite:///leadpilot.db' else 'NO (Using SQLite fallback)'}")
-    logger.info(f"GROQ_API_KEY detected: {'YES' if settings.GROQ_API_KEY else 'NO'}")
+    
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    logger.info(f"GROQ_API_KEY detected: {'YES' if groq_key else 'NO'}")
+    if groq_key:
+        is_valid_prefix = groq_key.startswith("gsk_")
+        logger.info(f"GROQ_API_KEY prefix valid: {'YES' if is_valid_prefix else 'NO'}")
+        if not is_valid_prefix:
+            logger.warning("GROQ_API_KEY does not look like a valid Groq key.")
+    else:
+        logger.error("GROQ_API_KEY is missing.")
+
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    logger.info(f"GEMINI_API_KEY detected: {'YES' if gemini_key else 'NO'}")
+    
+    from modules.ai.gemini_client import GEMINI_AVAILABLE
+    logger.info(f"Gemini SDK import: {'OK' if GEMINI_AVAILABLE else 'FAILED'}")
+    
     logger.info(f"SERPER_API_KEY detected: {'YES' if settings.SERPER_API_KEY else 'NO'}")
     logger.info("=======================================")
 
@@ -64,7 +80,7 @@ def run_startup_checks():
         optional.append("DATABASE_URL not set, using local SQLite.")
     if not settings.SERPER_API_KEY:
         optional.append("SERPER_API_KEY missing: Serper features will be limited.")
-    if not settings.GROQ_API_KEY:
+    if not groq_key:
         optional.append("No Groq API key configured. Fallback generation only.")
     for item in issues:
         logger.error(f"Startup Issue: {item}")

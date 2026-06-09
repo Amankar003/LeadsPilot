@@ -73,9 +73,7 @@ Return only valid JSON with exactly this structure:
   ],
   "outreach": {{
     "email_subject": "",
-    "email_body": "",
-    "whatsapp_message": "",
-    "linkedin_message": ""
+    "email_body": ""
   }},
   "sales_call_notes": [
     ""
@@ -115,7 +113,7 @@ def generate_ai_report(audit_data: dict, pain_points: list, services: list) -> d
     )
     
     logger.info("Sending audit facts to Groq AI for report generation...")
-    result = ai.generate_json(prompt)
+    result = ai.generate_json(prompt, task_name="executive_report")
     
     if "error" in result:
         logger.error(f"AI Report generation failed: {result['error']}")
@@ -141,9 +139,7 @@ Make the email concise, personalized, and focus on the main pitch. Do not includ
 Return ONLY valid JSON:
 {{
   "email_subject": "",
-  "email_body": "",
-  "whatsapp_message": "",
-  "linkedin_message": ""
+  "email_body": ""
 }}
 """
 
@@ -156,7 +152,7 @@ def regenerate_outreach(ai_report_json: dict) -> dict:
         pitch=ai_report_json.get("main_pitch_angle", "Unknown")
     )
     
-    result = ai.generate_json(prompt)
+    result = ai.generate_json(prompt, task_name="email_generation")
     if "error" in result:
         return {}
     return result

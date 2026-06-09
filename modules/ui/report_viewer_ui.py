@@ -189,7 +189,6 @@ def render_report_details(db, lead: Lead, report: AnalysisReport):
         "📊 Executive Report",
         "💔 Pain Points & Services",
         "✉️ AI Outreach Generator",
-        "📜 Outreach History",
         "🔍 Raw Audit Data",
     ])
 
@@ -207,12 +206,8 @@ def render_report_details(db, lead: Lead, report: AnalysisReport):
     with tabs[2]:
         _render_outreach_tab(db, lead, report, ai_data)
 
-    # ── Tab 3: Outreach History ──────────────────
+    # ── Tab 3: Raw Audit Data ────────────────────
     with tabs[3]:
-        _render_history_tab(db, lead)
-
-    # ── Tab 4: Raw Audit Data ────────────────────
-    with tabs[4]:
         st.json(report.raw_audit_json or {})
 
 
@@ -340,10 +335,10 @@ def _render_outreach_tab(db, lead: Lead, report: AnalysisReport, ai_data: dict):
                         service_focus="Auto (from report)",
                         subject_lines=result.get("subject_lines", []),
                         email_body=result.get("email_body", ""),
-                        whatsapp_message=result.get("whatsapp_message", ""),
-                        linkedin_message=result.get("linkedin_message", ""),
-                        follow_up_1=result.get("follow_up_1", ""),
-                        follow_up_2=result.get("follow_up_2", ""),
+                        whatsapp_message="",
+                        linkedin_message="",
+                        follow_up_1="",
+                        follow_up_2="",
                     )
 
                     st.success("✅ Outreach generated and saved automatically!")
@@ -361,10 +356,6 @@ def _render_outreach_tab(db, lead: Lead, report: AnalysisReport, ai_data: dict):
         result = {
             "subject_lines": latest.subject_lines or [],
             "email_body": latest.email_body or "",
-            "whatsapp_message": latest.whatsapp_message or "",
-            "linkedin_message": latest.linkedin_message or "",
-            "follow_up_1": latest.follow_up_1 or "",
-            "follow_up_2": latest.follow_up_2 or "",
             "_db_id": latest.id,
         }
         st.session_state[f"outreach_result_{lead.id}"] = result
@@ -452,10 +443,10 @@ def _render_outreach_tab(db, lead: Lead, report: AnalysisReport, ai_data: dict):
                     service_focus=st.session_state.get(f"svc_{lead.id}", "Auto (from report)"),
                     subject_lines=new_result.get("subject_lines", []),
                     email_body=new_result.get("email_body", ""),
-                    whatsapp_message=new_result.get("whatsapp_message", ""),
-                    linkedin_message=new_result.get("linkedin_message", ""),
-                    follow_up_1=new_result.get("follow_up_1", ""),
-                    follow_up_2=new_result.get("follow_up_2", ""),
+                    whatsapp_message="",
+                    linkedin_message="",
+                    follow_up_1="",
+                    follow_up_2="",
                 )
                 new_result["_db_id"] = new_msg.id
                 
@@ -499,127 +490,4 @@ def _render_outreach_tab(db, lead: Lead, report: AnalysisReport, ai_data: dict):
 
     st.markdown("---")
 
-    # ── Social & Messaging ───────────────────────
-    st.markdown("#### 💬 Social & Messaging Variants")
-
-    wa_col, li_col = st.columns(2)
-    with wa_col:
-        st.markdown("**📱 WhatsApp Message**")
-        wa_val = st.text_area(
-            "WhatsApp",
-            value=result.get("whatsapp_message", ""),
-            height=140,
-            key=f"wa_{lead.id}",
-            label_visibility="collapsed",
-        )
-        wa_btn1, wa_btn2 = st.columns(2)
-        with wa_btn1:
-            if st.button("🔄 Regenerate", key=f"regen_wa_{lead.id}", use_container_width=True):
-                from modules.analysis.outreach_generator import generate_single_channel
-                new_wa = generate_single_channel("whatsapp", result, lead, report)
-                result["whatsapp_message"] = new_wa
-                st.session_state[f"outreach_result_{lead.id}"] = result
-                st.rerun()
-        with wa_btn2:
-            st.caption("Copy & paste to WhatsApp Web")
-
-    with li_col:
-        st.markdown("**💼 LinkedIn Message**")
-        li_val = st.text_area(
-            "LinkedIn",
-            value=result.get("linkedin_message", ""),
-            height=140,
-            key=f"li_{lead.id}",
-            label_visibility="collapsed",
-        )
-        li_btn1, li_btn2 = st.columns(2)
-        with li_btn1:
-            if st.button("🔄 Regenerate", key=f"regen_li_{lead.id}", use_container_width=True):
-                from modules.analysis.outreach_generator import generate_single_channel
-                new_li = generate_single_channel("linkedin", result, lead, report)
-                result["linkedin_message"] = new_li
-                st.session_state[f"outreach_result_{lead.id}"] = result
-                st.rerun()
-        with li_btn2:
-            st.caption("Copy & paste to LinkedIn")
-
     st.markdown("---")
-
-    # ── Follow-up Sequences ──────────────────────
-    st.markdown("#### 🔁 Follow-up Sequence")
-    fu1, fu2 = st.columns(2)
-    with fu1:
-        st.markdown("**Follow-up #1**")
-        st.text_area(
-            "Follow-up 1",
-            value=result.get("follow_up_1", ""),
-            height=160,
-            key=f"fu1_{lead.id}",
-            label_visibility="collapsed",
-        )
-    with fu2:
-        st.markdown("**Follow-up #2**")
-        st.text_area(
-            "Follow-up 2",
-            value=result.get("follow_up_2", ""),
-            height=160,
-            key=f"fu2_{lead.id}",
-            label_visibility="collapsed",
-        )
-
-
-def _render_history_tab(db, lead: Lead):
-    st.markdown("### 📜 Outreach Generation History")
-    st.caption("All previously generated outreach variations for this lead.")
-
-    from modules.database.repositories import OutreachMessageRepository
-    history = OutreachMessageRepository(db).get_by_lead_id(lead.id)
-
-    if not history:
-        st.info("No outreach has been generated yet for this lead.")
-        return
-
-    for i, msg in enumerate(history):
-        approved_badge = " ✅ **APPROVED**" if msg.is_approved else ""
-        label = (
-            f"#{i+1} · {msg.email_type} · {msg.tone} · {msg.created_at.strftime('%d %b %Y %H:%M')}"
-            f"{approved_badge}"
-        )
-        with st.expander(label, expanded=(i == 0)):
-            col_a, col_b = st.columns([1, 1])
-            with col_a:
-                st.markdown(f"**Type:** {msg.email_type}")
-                st.markdown(f"**Tone:** {msg.tone} | **Length:** {msg.length} | **CTA:** {msg.cta_goal}")
-                st.markdown(f"**Service Focus:** {msg.service_focus}")
-            with col_b:
-                if msg.is_approved:
-                    st.success(f"Approved Subject: {msg.approved_subject}")
-                    st.caption(f"Approved at: {msg.approved_at}")
-
-            st.markdown("**Subject Lines:**")
-            for subj in (msg.subject_lines or []):
-                st.markdown(f"- {subj}")
-
-            st.markdown("**Email Body:**")
-            st.code(msg.email_body or "—", language=None)
-
-            if msg.whatsapp_message:
-                st.markdown("**WhatsApp:**")
-                st.code(msg.whatsapp_message, language=None)
-
-            if msg.linkedin_message:
-                st.markdown("**LinkedIn:**")
-                st.code(msg.linkedin_message, language=None)
-
-            # Load into active session
-            if st.button(f"📥 Load This Version", key=f"load_{msg.id}"):
-                st.session_state[f"outreach_result_{lead.id}"] = {
-                    "subject_lines": msg.subject_lines or [],
-                    "email_body": msg.email_body or "",
-                    "whatsapp_message": msg.whatsapp_message or "",
-                    "linkedin_message": msg.linkedin_message or "",
-                    "follow_up_1": msg.follow_up_1 or "",
-                    "follow_up_2": msg.follow_up_2 or "",
-                    "_db_id": msg.id,
-                }
-                st.rerun()

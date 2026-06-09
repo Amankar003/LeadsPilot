@@ -7,9 +7,7 @@ from modules.ai.prompts import (
     SYSTEM_PROMPT,
     EMAIL_GENERATOR_PROMPT,
     FOLLOWUP_GENERATOR_PROMPT,
-    EMAIL_STYLES,
-    CTA_VARIATIONS,
-    ANTI_SPAM_RULES
+    CTA_VARIATIONS
 )
 from config import settings
 
@@ -67,7 +65,7 @@ class EmailGenerator:
         if "error" not in ai_report:
             outreach = ai_report.get("outreach", {})
             return {
-                "subject": outreach.get("email_subject", "Let's Connect"),
+                "subject": outreach.get("subject", "Let's Connect"),
                 "email_body": outreach.get("email_body", ""),
                 "business_name": business_name,
                 "receiver_name": receiver_name,
@@ -115,27 +113,24 @@ class EmailGenerator:
         sender_role = sender_info.get("sender_role", settings.SENDER_ROLE)
         agency_website = sender_info.get("agency_website", settings.AGENCY_WEBSITE)
 
-        # Randomize style for draft
-        style_keys = list(EMAIL_STYLES.keys())
-        selected_style = EMAIL_STYLES[random.choice(style_keys)]
+        # Select CTA
         selected_cta = random.choice(CTA_VARIATIONS)
 
         prompt = EMAIL_GENERATOR_PROMPT.format(
-            executive_report="Initial AI review suggests significant digital gaps.",
-            pain_points=json.dumps([{"title": "Weak Digital Presence", "severity": "medium", "evidence": "Low local search visibility"}]),
-            recommended_services=json.dumps([{"service_name": "Digital Marketing", "priority": "High"}]),
+            executive_report="Initial AI review suggests digital gaps that may be limiting inbound enquiries.",
+            pain_points=json.dumps([{"title": "Weak Local Visibility", "severity": "medium", "evidence": "Low local search presence"}]),
+            recommended_services=json.dumps([{"service_name": "Local SEO & Lead Capture", "priority": "High"}]),
             audit_summary=audit_summary,
             sender_name=sender_name,
             sender_role=sender_role,
             agency_website=agency_website,
-            email_style_name=selected_style["name"],
-            email_style_tone=selected_style["tone"],
-            email_style_opening=selected_style["opening_pattern"],
             cta_variation=selected_cta,
-            anti_spam_rules=ANTI_SPAM_RULES
+            company_name=cleaned_name,
+            industry=inferred_cat,
+            location=location
         )
 
-        result = self.ai.generate_json(prompt, system_prompt=SYSTEM_PROMPT)
+        result = self.ai.generate_json(prompt, system_prompt=SYSTEM_PROMPT, task_name="email_generation")
         
         email_body = result.get("email_body", "")
         def count_words(text):
@@ -146,13 +141,16 @@ class EmailGenerator:
         
         if "error" in result or word_count < 90:
             deterministic_body = (
-                f"I was researching {inferred_cat} providers in {location} and took a closer look at {cleaned_name}'s online presence.\n\n"
-                f"I put together a few quick observations that could help capture more enquiries:\n"
-                f"• Digital discoverability could be improved to capture local search traffic.\n"
-                f"• Enquiry pathways currently have some friction for mobile visitors.\n\n"
-                f"For a local business, these small gaps can lead to missing inbound leads and lower conversion rates on first impressions.\n\n"
-                f"✓ Digital discoverability → Enhance local search signals\n"
-                f"✓ Enquiry pathways → Implement simpler contact flows like WhatsApp\n\n"
+                f"Hi {cleaned_name} team,\n\n"
+                f"While looking at {inferred_cat} businesses in {location}, I noticed a few areas where {cleaned_name} could turn more website visitors into direct enquiries.\n\n"
+                f"For {inferred_cat} businesses, many potential customers visit from mobile while deciding where to go. "
+                f"If the next step is not immediately clear, those visitors may leave without contacting the business.\n\n"
+                f"A few practical improvements could help:\n\n"
+                f"* Add clearer enquiry and contact paths \u2014 so visitors know exactly how to reach you.\n"
+                f"* Improve mobile call and direction buttons \u2014 so nearby customers can act quickly.\n"
+                f"* Highlight reviews and trust signals \u2014 so first-time visitors feel more confident.\n"
+                f"* Add simple follow-up automation \u2014 so enquiries are not missed during busy hours.\n\n"
+                f"At 3Fi Tech, we help service businesses improve local visibility, website journeys, lead capture, and follow-up systems so more visitors turn into real enquiries.\n\n"
                 f"{selected_cta}"
             )
             result["email_body"] = deterministic_body
@@ -177,14 +175,14 @@ class EmailGenerator:
                 idx = body_text.rfind("Best regards")
                 body_text = body_text[:idx].strip()
                 
-            sig_text = f"\n\nBest regards,\n\n{sender_name}\n{sender_role}\n3FI Tech\n{agency_website}"
+            sig_text = f"\n\nBest regards,\n\n{sender_name}\n{sender_role}\n3Fi Tech\n{agency_website}"
             result["email_body"] = body_text + sig_text
 
         if "error" in result:
             return {
                 "error": result.get("error"), 
                 "subject": "Digital Partnership Idea", 
-                "email_body": result.get("email_body", "Dear Business Owner,\n\nWe would love to help you with Digital Development.\n\nBest,\n3FI Tech Team")
+                "email_body": result.get("email_body", f"Hi there,\n\nWe noticed a few areas where your online presence could bring in more enquiries. At 3Fi Tech, we help service businesses improve local visibility and lead capture.\n\nWould it be useful if we shared a complimentary audit report?\n\nBest regards,\n{settings.SENDER_NAME}")
             }
 
         return result
@@ -207,7 +205,7 @@ class EmailGenerator:
             followup_number=followup_number
         )
 
-        result = self.ai.generate_json(prompt, system_prompt=SYSTEM_PROMPT)
+        result = self.ai.generate_json(prompt, system_prompt=SYSTEM_PROMPT, task_name="email_generation")
         if "error" in result:
             if followup_number == 1:
                 return {

@@ -41,8 +41,11 @@ def render_dork_optimizer():
         campaign_repo = CampaignRepository(db)
         campaigns = campaign_repo.get_all() or []
         
+        # Imports for the new AI Pipeline Tab
+        from modules.ui.ai_pipeline_ui import render_ai_pipeline_tab, render_free_prompt_tab
+        
         # Tabs
-        tab1, tab2 = st.tabs(["🚀 Run Opportunity Pipeline", "🎛️ Manual Dork Generator"])
+        tab1, tab2, tab3, tab4 = st.tabs(["🚀 Opportunity Pipeline", "🎛️ Manual Dork Generator", "🤖 AI Pipeline", "💡 Free Prompts"])
         
         # ----------------------------------------------------
         # TAB 1: RUN PIPELINE
@@ -147,6 +150,13 @@ def render_dork_optimizer():
                             <p style="font-size: 14px; font-weight: 500; color: #0f172a;"><strong>Suggested Offer:</strong> {opp.suggested_offer}</p>
                         </div>
                         """, unsafe_allow_html=True)
+                        
+                        # AI Pipeline Transfer Button
+                        if st.button(f"✨ Optimize this Opportunity in AI Pipeline", key=f"ai_transfer_opp_{opp_idx}"):
+                            st.session_state["ai_transfer_intent"] = f"Find targets for {opp.category} needing {opp.suggested_offer}. Trend: {opp.trend_summary}"
+                            st.session_state["ai_transfer_location"] = opp.region or opp.country or "Global"
+                            st.success("Opportunity data transferred! Open the 🤖 AI Pipeline tab and select 'Free Prompt' mode to continue.")
+
                         
                         # Load generated dorks for this opportunity
                         from modules.database.models import GeneratedDork
@@ -386,8 +396,26 @@ def render_dork_optimizer():
                             db.commit()
                             st.success(f"Saved {len(selected_m_dork_ids)} selected dorks to local database history!")
                             
-                    st.info("💡 Hint: After scraping, generated leads are automatically checked for quality, enrichment details, and will become fully available inside the CRM and MailForge Outreach Suite.")
-                    
+                    st.write("") # Spacing
+                    if st.button("✨ Upgrade Selected Dorks using AI", key="m_ai_upgrade_btn", use_container_width=True):
+                        if not selected_m_dorks:
+                            st.warning("Please select at least one dork to upgrade.")
+                        else:
+                            st.session_state["ai_transfer_dorks"] = selected_m_dorks
+                            st.success("Dorks transferred! Open the 🤖 AI Pipeline tab and select 'Optimize Existing Dorks' to continue.")
+                            
+        # ----------------------------------------------------
+        # TAB 3: AI PIPELINE
+        # ----------------------------------------------------
+        with tab3:
+            render_ai_pipeline_tab()
+            
+        # ----------------------------------------------------
+        # TAB 4: FREE PROMPTS
+        # ----------------------------------------------------
+        with tab4:
+            render_free_prompt_tab()
+            
     except Exception as e:
         logger.error(f"Error rendering Dork Optimizer UI: {e}", exc_info=True)
         st.error(f"⚠️ An error occurred while loading Dork Optimizer: {str(e)}")

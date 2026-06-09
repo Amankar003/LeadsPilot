@@ -569,8 +569,8 @@ def save_enriched_lead(enriched_data: dict, campaign_id: str, scraping_job_id: s
                     service_focus=svc.get("service_name") if ai_report.get("recommended_services") else "General Development",
                     subject_lines=[outreach.get("email_subject", "Boost Discoverability")],
                     email_body=outreach.get("email_body"),
-                    whatsapp_message=outreach.get("whatsapp_message"),
-                    linkedin_message=outreach.get("linkedin_message")
+                    whatsapp_message="",
+                    linkedin_message=""
                 )
                 db.add(msg_obj)
                 

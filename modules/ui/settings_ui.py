@@ -40,7 +40,10 @@ def render_settings():
             st.error("❌ Groq AI")
 
     with c3:
-        st.empty()
+        if os.getenv("GEMINI_API_KEY"):
+            st.success("✅ Gemini AI")
+        else:
+            st.warning("⚠️ Gemini AI (Disabled)")
 
     with c4:
         st.empty()
@@ -52,9 +55,11 @@ def render_settings():
     with c1:
         info_card("Database", f"`{DATABASE_URL[:35]}…`")
         info_card("Groq Model", f"`{GROQ_MODEL}`")
+        info_card("Gemini Model", f"`{os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')}`")
     with c2:
-        info_card("Export Format", "CSV (receiverid, subject, body)")
-        info_card("Email Sending", "Handled externally via CSV export")
+        info_card("Fast Tasks", f"`{os.getenv('LLM_FAST_PROVIDER', 'groq')}`")
+        info_card("Quality Tasks", f"`{os.getenv('LLM_QUALITY_PROVIDER', 'gemini')}`")
+        info_card("Email Provider", f"`{os.getenv('EMAIL_GENERATION_PROVIDER', 'gemini')}`")
 
 
     # ── Setup Guide ──

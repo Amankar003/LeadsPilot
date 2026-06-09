@@ -13,9 +13,7 @@ from modules.ai.prompts import (
     AUDIT_INTERPRETATION_PROMPT,
     AUDIT_SUMMARIZATION_PROMPT,
     EMAIL_GENERATOR_PROMPT,
-    EMAIL_STYLES,
     CTA_VARIATIONS,
-    ANTI_SPAM_RULES,
     FOLLOWUP_GENERATOR_PROMPT
 )
 from utils.logging_utils import get_logger
@@ -117,7 +115,7 @@ def generate_outreach(report, lead, email_type: str, tone: str, length: str, cta
         location=city
     )
     logger.info(f"Running Audit Interpretation Stage for {cleaned_lead_name}")
-    interp_result = ai.generate_json(interp_prompt, system_prompt=SYSTEM_PROMPT)
+    interp_result = ai.generate_json(interp_prompt, system_prompt=SYSTEM_PROMPT, task_name="audit_generation")
     interpreted_opps = json.dumps(interp_result.get("interpreted_opportunities", []), indent=2)
     
     # =========================================================================
@@ -130,7 +128,7 @@ def generate_outreach(report, lead, email_type: str, tone: str, length: str, cta
         interpreted_opportunities=interpreted_opps
     )
     logger.info(f"Running Audit Summarization Stage for {cleaned_lead_name}")
-    summ_result = ai.generate_json(summ_prompt, system_prompt=SYSTEM_PROMPT)
+    summ_result = ai.generate_json(summ_prompt, system_prompt=SYSTEM_PROMPT, task_name="audit_generation")
     audit_summary = json.dumps(summ_result, indent=2)
     
     # =========================================================================
@@ -144,10 +142,6 @@ def generate_outreach(report, lead, email_type: str, tone: str, length: str, cta
     else:
         hash_val = lead_id
 
-    style_keys = list(EMAIL_STYLES.keys())
-    selected_style_key = style_keys[hash_val % len(style_keys)]
-    selected_style = EMAIL_STYLES[selected_style_key]
-    
     selected_cta = CTA_VARIATIONS[hash_val % len(CTA_VARIATIONS)]
     
     # =========================================================================
@@ -166,11 +160,10 @@ def generate_outreach(report, lead, email_type: str, tone: str, length: str, cta
         sender_name=settings.SENDER_NAME,
         sender_role=settings.SENDER_ROLE,
         agency_website=settings.AGENCY_WEBSITE,
-        email_style_name=selected_style["name"],
-        email_style_tone=selected_style["tone"],
-        email_style_opening=selected_style["opening_pattern"],
         cta_variation=selected_cta,
-        anti_spam_rules=ANTI_SPAM_RULES
+        company_name=cleaned_lead_name,
+        industry=inferred_category,
+        location=city
     )
     logger.info("=" * 60)
     logger.info("DEBUG PHASE 1: VERIFYING EMAIL GENERATION INPUTS")
@@ -181,30 +174,70 @@ def generate_outreach(report, lead, email_type: str, tone: str, length: str, cta
     logger.info(f"FINAL PROMPT TO LLM:\n{gen_prompt}\n")
     logger.info("=" * 60)
     
-    logger.info(f"Running Email Generation for {cleaned_lead_name} using {selected_style['name']}")
+    logger.info(f"Running Email Generation for {cleaned_lead_name}")
+    
+    # ─── Banned phrase quality gate ───
+    BANNED_PHRASES = [
+        "I recently reviewed", "We specialize in", "Hope you're doing well",
+        "I hope this email finds you well", "5-minute review", "digital setup",
+        "services services", "I wanted to reach out", "brief call",
+        "book a call", "schedule a meeting", "game-changer", "skyrocket",
+        "significant portion", "active local mobile users",
+    ]
+    
+    def _has_banned_phrases(text: str) -> list:
+        """Return list of banned phrases found in text."""
+        found = []
+        lower = text.lower()
+        for phrase in BANNED_PHRASES:
+            if phrase.lower() in lower:
+                found.append(phrase)
+        # Also flag "your business" repeated 3+ times
+        if lower.count("your business") >= 3:
+            found.append("your business (repeated)")
+        return found
+    
+    def _sanitize_email(text: str) -> str:
+        """Remove banned phrases from the email as a last resort."""
+        for phrase in BANNED_PHRASES:
+            text = re.sub(re.escape(phrase), "", text, flags=re.IGNORECASE)
+        # Collapse double spaces and blank lines left behind
+        text = re.sub(r'  +', ' ', text)
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        return text.strip()
     
     max_attempts = 2
     final_result = {}
     for attempt in range(max_attempts):
-        final_result = ai.generate_json(gen_prompt, system_prompt=SYSTEM_PROMPT)
+        final_result = ai.generate_json(gen_prompt, system_prompt=SYSTEM_PROMPT, task_name="email_generation")
         email_body = final_result.get("email_body", "")
 
-        findings_count = email_body.count("•")
-        mappings_count = email_body.count("→") + email_body.count("✓")
-        
         word_count = len(email_body.split())
-        has_bullets = "•" in email_body
+        has_bullets = any(marker in email_body for marker in ["•", "*", "—", "-"])
         has_business_name = cleaned_lead_name.lower() in email_body.lower() if cleaned_lead_name else True
+        banned_found = _has_banned_phrases(email_body)
         
-        # Check for 3FI Tech services or capabilities mentioned
-        service_keywords = ["service", "optimization", "integration", "development", "consultancy", "security", "marketing", "automation", "analytics"]
-        services_mentioned = sum(1 for s in service_keywords if s in email_body.lower())
-        
-        if findings_count >= 3 and mappings_count >= 3 and word_count >= 150 and has_bullets and has_business_name:
+        if word_count >= 100 and has_bullets and has_business_name and not banned_found:
             logger.info("Email generation passed validation checks.")
             break
         else:
-            logger.warning(f"Email generation validation failed (Attempt {attempt + 1}/{max_attempts}): findings={findings_count}, mappings={mappings_count}, words={word_count}")
+            reasons = []
+            if word_count < 100:
+                reasons.append(f"too_short={word_count}")
+            if not has_bullets:
+                reasons.append("no_bullets")
+            if not has_business_name:
+                reasons.append("missing_business_name")
+            if banned_found:
+                reasons.append(f"banned={banned_found}")
+            logger.warning(f"Email validation failed (Attempt {attempt + 1}/{max_attempts}): {', '.join(reasons)}")
+    
+    # Final sanitization pass — clean any remaining banned phrases
+    email_body = final_result.get("email_body", "")
+    if _has_banned_phrases(email_body):
+        logger.info("Running fallback sanitizer to remove banned phrases.")
+        email_body = _sanitize_email(email_body)
+        final_result["email_body"] = email_body
     
     # Ensure signature is perfectly appended and clean up LLM hallucinations
     email_body = final_result.get("email_body", "")
@@ -217,7 +250,7 @@ def generate_outreach(report, lead, email_type: str, tone: str, length: str, cta
             break
 
     # Add correct signature block
-    sig_text = f"\n\nBest regards,\n\n{settings.SENDER_NAME}\n{settings.SENDER_ROLE}\n3FI Tech\n{settings.AGENCY_WEBSITE}"
+    sig_text = f"\n\nBest regards,\n\n{settings.SENDER_NAME}\n{settings.SENDER_ROLE}\n3Fi Tech\n{settings.AGENCY_WEBSITE}"
     email_body = email_body.strip() + sig_text
     
     final_result["email_body"] = email_body
@@ -226,7 +259,7 @@ def generate_outreach(report, lead, email_type: str, tone: str, length: str, cta
     if "subject" in final_result and "subject_lines" not in final_result:
         final_result["subject_lines"] = [final_result["subject"]]
     elif "subject_lines" not in final_result:
-        final_result["subject_lines"] = ["Digital Growth Ideas"]
+        final_result["subject_lines"] = ["Growth ideas for your team"]
         
     word_count = count_words(email_body.split("\n\nBest regards,")[0])
     final_result["word_count"] = word_count
@@ -245,7 +278,7 @@ def apply_modifier(current_email_body: str, modifier: str) -> str:
         return current_email_body
 
     prompt = f"{base_prompt}\n\nEMAIL:\n{current_email_body}"
-    result = ai.generate_json(prompt)
+    result = ai.generate_json(prompt, task_name="email_generation")
 
     if "error" in result:
         logger.error(f"Modifier '{modifier}' failed: {result.get('error')}")
@@ -254,28 +287,4 @@ def apply_modifier(current_email_body: str, modifier: str) -> str:
     return result.get("email_body", current_email_body)
 
 
-def generate_single_channel(channel: str, current_result: dict, lead, report) -> str:
-    """Generate or regenerate a single channel message (WhatsApp or LinkedIn)."""
-    ai = AIClient()
-    ai_data = report.ai_report_json or {} if report else {}
 
-    if channel == "whatsapp":
-        prompt = f"""
-Write a WhatsApp message under 60 words for {lead.business_name} ({lead.category}, {lead.city}).
-Based on this insight: {ai_data.get('main_pitch_angle', 'general digital improvements')}
-Tone: friendly, direct. No formal greetings. Start with a specific observation.
-Return JSON: {{"whatsapp_message": ""}}
-"""
-    else:
-        prompt = f"""
-Write a LinkedIn connection note under 50 words for {lead.business_name} ({lead.category}, {lead.city}).
-Based on this insight: {ai_data.get('main_pitch_angle', 'general digital improvements')}
-Tone: professional, curious. No generic phrases.
-Return JSON: {{"linkedin_message": ""}}
-"""
-
-    result = ai.generate_json(prompt)
-    if "error" in result:
-        return current_result.get(f"{channel}_message", "")
-
-    return result.get(f"{channel}_message", current_result.get(f"{channel}_message", ""))

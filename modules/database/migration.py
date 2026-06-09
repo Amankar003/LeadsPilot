@@ -449,6 +449,24 @@ def run_migration():
 
     # Use a SINGLE connection for everything to avoid NullPool overhead
     with engine.connect() as conn:
+        # ── Targeted compatibility migration for pain_points.job_id ──
+        try:
+            inspector = inspect(conn)
+            if 'pain_points' in inspector.get_table_names():
+                cols = [c['name'].lower() for c in inspector.get_columns('pain_points')]
+                if 'job_id' not in cols:
+                    logger.info("Targeted migration: Adding missing column pain_points.job_id")
+                    col_type = 'VARCHAR(255)' if is_pg else 'TEXT'
+                    conn.execute(text(f"ALTER TABLE pain_points ADD COLUMN job_id {col_type}"))
+                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_pain_points_job_id ON pain_points(job_id)"))
+                    logger.info("pain_points.job_id exists")
+        except Exception as e:
+            logger.warning(f"Failed to check/add pain_points.job_id: {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
         # ── Step 1: Check if migration can be skipped ──
         stored_hash = _get_stored_schema_hash(conn, is_pg)
         if stored_hash == expected_hash:

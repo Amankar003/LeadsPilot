@@ -24,9 +24,10 @@ DATABASE_URL = _db_url
 
 # API Keys
 GROQ_API_KEY = get_env_var("GROQ_API_KEY", "")
-GROQ_MODEL = get_env_var("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = get_env_var("GROQ_MODEL", "llama-3.1-8b-instant")
 SERPER_API_KEY = get_env_var("SERPER_API_KEY", "")
 SERP_API_KEY = get_env_var("SERP_API_KEY", "")
+NEWSDATA_API_KEY = get_env_var("NEWSDATA_API_KEY", "")
 
 # Authentication Settings
 ADMIN_EMAIL = get_env_var("ADMIN_EMAIL", "admin@leadpilot.ai")
